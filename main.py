@@ -27,14 +27,13 @@ except ValueError as e:
 API_HASH = os.environ.get("API_HASH", "")
 BOT_TOKEN = os.environ.get("BOT_TOKEN", "")
 APP_URL = os.environ.get("APP_URL", "")
-INVITE_LINK = os.environ.get("INVITE_LINK", "") # 🌟 အသစ်ထည့်သွင်းထားသော ဖိတ်ခေါ်စာလင့်ခ်
 PORT = int(os.environ.get("PORT", "8080"))
 
-if not API_ID or not API_HASH or not BOT_TOKEN or not BIN_CHANNEL or not INVITE_LINK:
-    print("❌ CRITICAL ERROR: Environment Variables (INVITE_LINK အပါအဝင်) မပြည့်စုံပါ။")
+if not API_ID or not API_HASH or not BOT_TOKEN or not BIN_CHANNEL:
+    print("❌ CRITICAL ERROR: Environment Variables မပြည့်စုံပါ။")
     sys.exit(1)
 
-# Memory ပေါ်တွင် အန္တရာယ်ကင်းစွာ ပတ်မည့်စနစ်
+# Memory ပေါ်တွင် ပတ်မည့်စနစ်
 bot = Client("KMTStreamBot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN, in_memory=True)
 routes = web.RouteTableDef()
 
@@ -46,7 +45,7 @@ routes = web.RouteTableDef()
 async def start_command(client: Client, message: Message):
     await message.reply_text(
         "👋 **KYAW MIN TUN - File Stream Bot မှ ကြိုဆိုပါတယ်ဗျာ။**\n\n"
-        "📁 ကျွန်တော့်ထံသို့ မည်သည့် ဖိုင်၊ ဓာတ်ပုံ၊ ဗီဒီယို သို့မဟုတ် အော်ဒီယိုမဆို ပေပို့လိုက်ပါ။\n"
+        "📁 ကျွန်တော့်ထံသို့ မည်သည့် ဖိုင်၊ ဓာတ်ပုံ၊ ဗီဒီယို သို့မဟုတ် အော်ဒီယိုမဆို ပေးပို့လိုက်ပါ။\n"
         "💡 သင့် Blog/Website ၏ Download Button တွင် တိုက်ရိုက်ထည့်သွင်းအသုံးပြုနိုင်မယ့် **Direct Link** ကို ချက်ချင်း ထုတ်ပေးသွားမှာ ဖြစ်ပါတယ်ခင်ဗျာ‌။",
         reply_to_message_id=message.id
     )
@@ -68,9 +67,12 @@ async def handle_incoming_file(client: Client, message: Message):
             disable_web_page_preview=True
         )
     except Exception as e:
+        # Peer invalid ထပ်ဖြစ်ခဲ့ပါက အလုပ်လုပ်မည့် စမတ်ကျသော လမ်းညွှန်ချက်
         await message.reply_text(
             f"❌ **Error occurred:** {str(e)}\n\n"
-            f"💡 **အကြံပြုချက်:** ဆာဗာ အရေးပေါ်ဖြစ်သွားပါက Bot အား /start တစ်ချက် ပြန်နှိပ်ပေးပါ။"
+            f"💡 **ဖြေရှင်းနည်းလမ်းညွှန်:**\n"
+            f"ဆာဗာ Restart ဖြစ်သွားသောကြောင့် Channel နှင့် ခေတ္တအဆက်အသွယ်ပြတ်သွားခြင်း ဖြစ်နိုင်ပါသည်။\n\n"
+            f"👉 ကျေးဇူးပြု၍ ခင်ဗျား၏ **Log Channel ထဲမှ ဖိုင်တစ်ခုခုကို ဤ Bot ထံသို့ တစ်ကြိမ်မျှ Forward လှမ်းပို့ပေးလိုက်ပါ**။ ၎င်းနောက် ဖိုင်များကို ပုံမှန်အတိုင်း ပြန်ပို့၍ လင့်ခ်ထုတ်ယူနိုင်ပါပြီဗျာ။"
         )
 
 @bot.on_message(filters.private & filters.text)
@@ -130,22 +132,18 @@ async def main():
     try:
         await bot.start()
         print("✅ Telegram Bot Connected Successfully!")
-        
-        # 🌟 [PEER ID INVALID SOLVED] Invite Link ကိုသုံးပြီး Channel Entity Cache ကို အတင်းဆွဲသွင်းသည့်စနစ် 🌟
-        print("🔄 Resolving and Hydrating Channel Peer Cache via Invite Link...")
-        try:
-            # Already Member/Admin ဖြစ်နေသော်လည်း get_chat သို့မဟုတ် join_chat သုံးပြီး ကုဒ်ကို မှတ်ခိုင်းခြင်း
-            chat = await bot.join_chat(INVITE_LINK)
-            print(f"✅ Peer Cache Hydrated Perfectly! Linked to: '{chat.title}' (ID: {chat.id})")
-        except Exception as join_err:
-            # ကုတ်ငြိခဲ့လျှင် ဒုတိယနည်းလမ်းဖြင့် ထပ်မံအတင်းမှတ်ခိုင်းခြင်း
-            print(f"⚠️ Primary hydration failed, trying backup: {join_err}")
-            chat = await bot.get_chat(INVITE_LINK)
-            print(f"✅ Backup Peer Cache Success! Linked to: '{chat.title}'")
-            
     except Exception as e:
         print(f"❌ TELEGRAM CONNECTION FAILED: {e}")
         sys.exit(1)
+
+    # 🌟 [FAILSAFE BUILD] စတင်ချိန်တွင် Channel ကို ဆွဲဖတ်မည်၊ အကယ်၍ မရခဲ့လျှင်ပင် ဆာဗာကို အကျဆုံးမခံဘဲ ဆက်ပတ်ထားမည့်စနစ် 🌟
+    print(f"🔄 Attempting to pre-cache Log Channel ID: {BIN_CHANNEL}...")
+    try:
+        chat = await bot.get_chat(BIN_CHANNEL)
+        print(f"✅ Success! Connected and Cached: '{chat.title}'")
+    except Exception as cache_err:
+        print(f"⚠️ Pre-cache Warning: {cache_err}")
+        print("💡 စတင်ချိန်တွင် ကက်ရ်ှဆွဲရန် အခက်အခဲရှိသော်လည်း ဆာဗာပြိုကွဲမသွားစေရန် ဆက်လက်ပတ်ထားပါမည်။")
 
     print("🔄 Starting Web Server...")
     app = web.Application()
