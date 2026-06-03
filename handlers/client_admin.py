@@ -94,11 +94,15 @@ async def receive_service_link(message: Message, state: FSMContext, bot: Bot):
         "status": "active"
     })
     
+    # 💥 Quote ငြိတဲ့ ပြဿနာမဖြစ်အောင် အပြင်မှာ ကြိုတင်ပြင်ဆင်ခြင်း
+    duration_val = data['service_duration']
+    duration_text = "Lifetime (တစ်သက်လုံး)" if duration_val == 0 else f"{duration_val} ရက်"
+    
     success_text = (
         "✅ **Service အသစ် အောင်မြင်စွာ ဖန်တီးပြီးပါပြီ!**\n\n"
         f"🔹 **အမည်:** {data['service_name']}\n"
         f"🔹 **ဈေးနှုန်း:** {data['service_price']} ကျပ်\n"
-        f"🔹 **သက်တမ်း:** {'Lifetime' if data['service_duration'] == 0 else f'{data['service_duration']} ရက်'}\n"
+        f"🔹 **သက်တမ်း:** {duration_text}\n"
         f"🔹 **Group/Link:** {message.text}"
     )
     await message.answer(success_text, parse_mode="Markdown")
