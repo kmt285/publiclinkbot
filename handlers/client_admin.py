@@ -4,7 +4,7 @@ from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKe
 from aiogram.fsm.context import FSMContext
 from bson.objectid import ObjectId
 from core.database import db
-from utils.states import AdminSetup
+from utils.states import AdminSetup, AdminBroadcast, EditService
 
 client_admin_router = Router()
 
@@ -15,7 +15,8 @@ def admin_kb():
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="💳 ငွေပေးချေမှု အကောင့်ထည့်ရန်", callback_data="set_payment")],
         [InlineKeyboardButton(text="➕ Service အသစ်ထည့်ရန်", callback_data="add_service")],
-        [InlineKeyboardButton(text="📢 အသုံးပြုသူများထံ Message ပို့ရန် (Broadcast)", callback_data="broadcast_msg")] # ခလုတ်အသစ်
+        [InlineKeyboardButton(text="⚙️ ဝန်ဆောင်မှုများ ပြင်/ဖျက်ရန်", callback_data="manage_services")],
+        [InlineKeyboardButton(text="📢 အသုံးပြုသူများထံ Message ပို့ရန်", callback_data="broadcast_msg")]
     ])
 
 # ==========================================
@@ -235,3 +236,106 @@ async def do_broadcast(message: Message, state: FSMContext, bot: Bot):
             pass
             
     await message.answer(f"✅ Message ပို့ဆောင်ခြင်း ပြီးဆုံးပါပြီ။\n📊 စုစုပေါင်း {success_count} ဦးထံသို့ အောင်မြင်စွာ ပို့ဆောင်နိုင်ခဲ့သည်။")
+
+# ==========================================
+# ⚙️ 6. Manage Services (ဝန်ဆောင်မှုများ ပြင်ဆင်/ဖျက်သိမ်းရန်)
+# ==========================================
+@client_admin_router.callback_query(F.data == "manage_services")
+async def manage_services_list(callback: CallbackQuery, bot: Bot):
+    business = await db.businesses.find_one({"bot_token": bot.token})
+    if callback.from_user.id != business.get("owner_id"): return
+
+    # Active ဖြစ်နေသော Service များကိုသာ ဆွဲထုတ်မည်
+    services = await db.services.find({"bot_token": bot.token, "status": "active"}).to_list(length=100)
+    
+    if not services:
+        await callback.answer("ဝန်ဆောင်မှု (Service) မရှိသေးပါ။", show_alert=True)
+        return
+
+    keyboard = []
+    for s in services:
+        keyboard.append([InlineKeyboardButton(text=f"⚙️ {s['name']}", callback_data=f"service_detail_{s['_id']}")])
+    
+    keyboard.append([InlineKeyboardButton(text="🔙 Admin Menu သို့ ပြန်သွားရန်", callback_data="back_to_admin")])
+    
+    await callback.message.edit_text("⚙️ **ပြင်ဆင်/ဖျက်သိမ်း လိုသော ဝန်ဆောင်မှုကို ရွေးချယ်ပါ။**", reply_markup=InlineKeyboardMarkup(inline_keyboard=keyboard), parse_mode="Markdown")
+
+@client_admin_router.callback_query(F.data == "back_to_admin")
+async def back_to_admin_menu(callback: CallbackQuery):
+    await callback.message.edit_text("🛠 **လုပ်ငန်းရှင် Admin Panel** မှ ကြိုဆိုပါတယ်။\n\nလိုအပ်သော လုပ်ဆောင်ချက်ကို အောက်ပါခလုတ်များမှ ရွေးချယ်ပါ။", reply_markup=admin_kb(), parse_mode="Markdown")
+
+@client_admin_router.callback_query(F.data.startswith("service_detail_"))
+async def show_service_detail(callback: CallbackQuery):
+    service_id = callback.data.split("_")[2]
+    service = await db.services.find_one({"_id": ObjectId(service_id)})
+    
+    if not service:
+        await callback.answer("ဤ Service ကို ရှာမတွေ့တော့ပါ။", show_alert=True)
+        return
+        
+    duration_val = service.get("duration", 0)
+    duration_text = "Lifetime" if duration_val == 0 else f"{duration_val} ရက်"
+    
+    text = (
+        f"📦 **Service အသေးစိတ်**\n\n"
+        f"🔹 **အမည်:** {service['name']}\n"
+        f"🔹 **ဈေးနှုန်း:** {service['price']} ကျပ်\n"
+        f"🔹 **သက်တမ်း:** {duration_text}\n\n"
+        "အောက်ပါ လုပ်ဆောင်ချက်များထဲမှ ရွေးချယ်ပါ-"
+    )
+    
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="✏️ အမည် ပြင်မည်", callback_data=f"edit_name_{service_id}")],
+        [InlineKeyboardButton(text="✏️ ဈေးနှုန်း ပြင်မည်", callback_data=f"edit_price_{service_id}")],
+        [InlineKeyboardButton(text="🗑 အပြီးတိုင် ဖျက်မည်", callback_data=f"delete_svc_{service_id}")],
+        [InlineKeyboardButton(text="🔙 နောက်သို့", callback_data="manage_services")]
+    ])
+    
+    await callback.message.edit_text(text, reply_markup=kb, parse_mode="Markdown")
+
+@client_admin_router.callback_query(F.data.startswith("delete_svc_"))
+async def delete_service(callback: CallbackQuery):
+    service_id = callback.data.split("_")[2]
+    
+    # 💥 (အရေးကြီး) - Database ထဲမှ အပြီးတိုင်မဖျက်ဘဲ 'deleted' ဟုသာ ပြောင်းလိုက်မည်။
+    # သို့မှသာ ယခင်ဝယ်ထားသော User များကို Auto-Kick စနစ်က ဆက်လက်အလုပ်လုပ်နိုင်မည် ဖြစ်သည်။
+    await db.services.update_one({"_id": ObjectId(service_id)}, {"$set": {"status": "deleted"}})
+    
+    await callback.answer("✅ ဝန်ဆောင်မှုကို အောင်မြင်စွာ ဖျက်သိမ်းပြီးပါပြီ။", show_alert=True)
+    await manage_services_list(callback, callback.bot)
+
+# --- ပြင်ဆင်ခြင်း (Edit Name / Edit Price) အပိုင်း ---
+@client_admin_router.callback_query(F.data.startswith("edit_name_"))
+async def ask_edit_name(callback: CallbackQuery, state: FSMContext):
+    service_id = callback.data.split("_")[2]
+    await state.update_data(edit_svc_id=service_id)
+    await callback.message.answer("✏️ ဝန်ဆောင်မှု၏ **အမည်အသစ်** ကို ရိုက်ထည့်ပါ။")
+    await state.set_state(EditService.waiting_for_new_name)
+    await callback.answer()
+
+@client_admin_router.message(EditService.waiting_for_new_name)
+async def save_new_name(message: Message, state: FSMContext):
+    data = await state.get_data()
+    service_id = data.get("edit_svc_id")
+    await db.services.update_one({"_id": ObjectId(service_id)}, {"$set": {"name": message.text}})
+    await message.answer("✅ ဝန်ဆောင်မှု အမည်ကို ပြင်ဆင်ပြီးပါပြီ။ Admin Panel သို့ ပြန်သွားရန် /start ကို နှိပ်ပါ။")
+    await state.clear()
+
+@client_admin_router.callback_query(F.data.startswith("edit_price_"))
+async def ask_edit_price(callback: CallbackQuery, state: FSMContext):
+    service_id = callback.data.split("_")[2]
+    await state.update_data(edit_svc_id=service_id)
+    await callback.message.answer("✏️ ဝန်ဆောင်မှု၏ **ဈေးနှုန်းအသစ်** ကို ဂဏန်းဖြင့်သာ ရိုက်ထည့်ပါ။\n(ဥပမာ - 20000)")
+    await state.set_state(EditService.waiting_for_new_price)
+    await callback.answer()
+
+@client_admin_router.message(EditService.waiting_for_new_price)
+async def save_new_price(message: Message, state: FSMContext):
+    if not message.text.isdigit():
+        await message.answer("⚠️ ကျေးဇူးပြု၍ ဂဏန်းသာ ရိုက်ထည့်ပါ။")
+        return
+    data = await state.get_data()
+    service_id = data.get("edit_svc_id")
+    await db.services.update_one({"_id": ObjectId(service_id)}, {"$set": {"price": int(message.text)}})
+    await message.answer("✅ ဝန်ဆောင်မှု ဈေးနှုန်းကို ပြင်ဆင်ပြီးပါပြီ။ Admin Panel သို့ ပြန်သွားရန် /start ကို နှိပ်ပါ။")
+    await state.clear()
