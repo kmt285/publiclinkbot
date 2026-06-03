@@ -4,6 +4,7 @@ from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKe
 from aiogram.filters import CommandStart, Command
 from bson.objectid import ObjectId
 from core.database import db
+from datetime import datetime, timedelta
 
 master_router = Router()
 
@@ -28,16 +29,22 @@ async def add_bot_cmd(message: Message):
         await message.answer("⚠️ ဒီ Bot Token က စနစ်ထဲမှာ ထည့်သွင်းပြီးသား ဖြစ်နေပါတယ်။")
         return
 
+    # 💥 NEW: (၁) လ (ရက် ၃၀) သက်တမ်း တွက်ချက်ခြင်း
+    created_date = datetime.utcnow()
+    expires_date = created_date + timedelta(days=30)
+
     await db.businesses.insert_one({
         "bot_token": token, 
         "status": "active",
-        "owner_id": message.from_user.id 
+        "owner_id": message.from_user.id,
+        "created_at": created_date,
+        "expires_at": expires_date # သက်တမ်းကုန်မည့်ရက် မှတ်သားခြင်း
     })
     
     from core.bot_manager import start_client_bot 
     asyncio.create_task(start_client_bot(token))
     
-    await message.answer("✅ Client Bot အသစ် အောင်မြင်စွာ ထည့်သွင်းပြီးပါပြီ။ သင့် Bot ဆီသွား၍ /start ကိုနှိပ်ပါ။")
+    await message.answer("✅ Client Bot အသစ် အောင်မြင်စွာ ထည့်သွင်းပြီးပါပြီ။ \n🎁 ဤ Bot အား (၁) လ အခမဲ့ အသုံးပြုခွင့် ပေးထားပါသည်။ သင့် Bot ဆီသွား၍ /start ကိုနှိပ်ပါ။")
 
 # ==========================================
 # 📊 စနစ်တစ်ခုလုံးကို စောင့်ကြည့်မည့် Super Admin Panel
@@ -82,7 +89,8 @@ async def list_businesses(callback: CallbackQuery):
         parse_mode="Markdown"
     )
 
-# --- Bot တစ်ခုချင်းစီ၏ အသေးစိတ် အချက်အလက်များပြသခြင်း ---
+# အောက်ပိုင်းရှိ view_business_detail ကို အောက်ပါအတိုင်း ပြင်ပါ
+# ==========================================
 @master_router.callback_query(F.data.startswith("biz_"))
 async def view_business_detail(callback: CallbackQuery):
     biz_id = callback.data.split("_")[1]
@@ -94,7 +102,6 @@ async def view_business_detail(callback: CallbackQuery):
         
     token = biz['bot_token']
     
-    # နောက်ကွယ်မှ Bot ၏ Username ကို လှမ်းယူခြင်း
     try:
         temp_bot = Bot(token=token)
         me = await temp_bot.get_me()
@@ -103,34 +110,35 @@ async def view_business_detail(callback: CallbackQuery):
     except:
         bot_username = "Unknown"
 
-    # ထို Bot အတွင်းရှိ Active User အရေအတွက် တွက်ခြင်း
     user_count = await db.subscriptions.count_documents({"bot_token": token, "status": "active"})
+    services = await db.services.find({"bot_token": token, "status": "active"}).to_list(length=100)
     
-    # ထို Bot က ရောင်းချနေသော Service (Channel) များကို ယူခြင်း
-    services = await db.services.find({"bot_token": token}).to_list(length=100)
-    
+    # 💥 NEW: Expire Date နှင့် Status ကို တွက်ချက်ခြင်း
+    expires_at = biz.get("expires_at")
+    if expires_at:
+        is_expired = datetime.utcnow() > expires_at
+        exp_date_str = expires_at.strftime("%d-%m-%Y")
+        status_text = "🔴 Expired (သက်တမ်းကုန်နေပါသည်)" if is_expired else f"🟢 Active (Exp: {exp_date_str})"
+    else:
+        status_text = "🟢 Active (Unlimited)"
+
     text = f"🤖 **Bot အမည်:** @{bot_username}\n"
     text += f"🔗 **Bot Link:** https://t.me/{bot_username}\n"
     text += f"👤 **Owner ID:** `{biz.get('owner_id', 'Unknown')}`\n"
-    text += f"👥 **လက်ရှိ Active Users:** {user_count} ဦး\n\n"
+    text += f"👥 **လက်ရှိ Active Users:** {user_count} ဦး\n"
+    text += f"⏳ **Bot သက်တမ်း:** {status_text}\n\n" # 💥 ဤနေရာတွင် ပြသမည်
     text += "📦 **Services & Channels:**\n"
     
     keyboard = []
     for s in services:
         text += f"🔹 {s['name']} (Price: {s['price']})\n"
-        # Channel ID ဖြစ်ပါက Link ယူမည့် ခလုတ် ထည့်ပေးမည်
         if s['link'].startswith("-100") or s['link'].startswith("@"):
             keyboard.append([InlineKeyboardButton(text=f"🔗 '{s['name']}' Invite Link ယူရန်", callback_data=f"genlink_{str(s['_id'])}")])
     
     keyboard.append([InlineKeyboardButton(text="🔙 နောက်သို့", callback_data="view_businesses")])
     
-    await callback.message.edit_text(
-        text, 
-        reply_markup=InlineKeyboardMarkup(inline_keyboard=keyboard), 
-        parse_mode="Markdown", 
-        disable_web_page_preview=True
-    )
-
+    await callback.message.edit_text(text, reply_markup=InlineKeyboardMarkup(inline_keyboard=keyboard), parse_mode="Markdown", disable_web_page_preview=True)
+    
 # --- Super Admin အတွက် Invite Link အလိုအလျောက် ထုတ်ပေးခြင်း ---
 @master_router.callback_query(F.data.startswith("genlink_"))
 async def generate_invite_link(callback: CallbackQuery):
