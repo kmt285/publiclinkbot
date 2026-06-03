@@ -1,6 +1,8 @@
+from datetime import datetime, timedelta
 from aiogram import Router, Bot, F
 from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.fsm.context import FSMContext
+from bson.objectid import ObjectId
 from core.database import db
 from utils.states import AdminSetup
 
@@ -14,7 +16,6 @@ def admin_kb():
 
 @client_admin_router.callback_query(F.data == "set_payment")
 async def set_payment_callback(callback: CallbackQuery, state: FSMContext, bot: Bot):
-    # လုံခြုံရေး - ပိုင်ရှင်မှလွဲ၍ အခြားသူ ခလုတ်နှိပ်ပါက ပယ်ချမည်
     business = await db.businesses.find_one({"bot_token": bot.token})
     if callback.from_user.id != business.get("owner_id"):
         await callback.answer("❌ သင်သည် ဤ Bot ၏ Admin မဟုတ်ပါ။", show_alert=True)
@@ -27,89 +28,129 @@ async def set_payment_callback(callback: CallbackQuery, state: FSMContext, bot: 
 
 @client_admin_router.message(AdminSetup.waiting_for_payment_info)
 async def receive_payment_info(message: Message, bot: Bot, state: FSMContext):
-    await db.businesses.update_one(
-        {"bot_token": bot.token}, 
-        {"$set": {"payment_info": message.text}}
-    )
-    await message.answer("✅ ငွေပေးချေမှု အချက်အလက်များကို အောင်မြင်စွာ သိမ်းဆည်းပြီးပါပြီ။")
+    await db.businesses.update_one({"bot_token": bot.token}, {"$set": {"payment_info": message.text}})
+    await message.answer("✅ Ngwe pay chay hmu information updated successfully.")
     await state.clear()
 
-# --- Service အသစ် ထည့်သွင်းခြင်း လုပ်ငန်းစဉ် ---
-
+# --- အဆင့် (၅) မှ ကုဒ်ဟောင်းများ ဆက်ရှိနေမည် (ကျဉ်းချထားပါသည်) ---
 @client_admin_router.callback_query(F.data == "add_service")
 async def add_service_callback(callback: CallbackQuery, state: FSMContext, bot: Bot):
-    # လုံခြုံရေး စစ်ဆေးခြင်း
     business = await db.businesses.find_one({"bot_token": bot.token})
-    if callback.from_user.id != business.get("owner_id"):
-        await callback.answer("❌ သင်သည် ဤ Bot ၏ Admin မဟုတ်ပါ။", show_alert=True)
-        return
-
-    await callback.message.answer("📝 ဝန်ဆောင်မှု (Service) အမည်ကို ရိုက်ထည့်ပါ။\n(ဥပမာ - VIP Trading Signals, Premium English Course)")
+    if callback.from_user.id != business.get("owner_id"): return
+    await callback.message.answer("📝 ဝန်ဆောင်မှု (Service) အမည်ကို ရိုက်ထည့်ပါ။")
     await state.set_state(AdminSetup.waiting_for_service_name)
     await callback.answer()
 
 @client_admin_router.message(AdminSetup.waiting_for_service_name)
 async def receive_service_name(message: Message, state: FSMContext):
-    # အမည်ကို ယာယီ မှတ်ထားမည်
     await state.update_data(service_name=message.text)
-    
-    await message.answer("💰 ဤ Service အတွက် ဈေးနှုန်းကို ရိုက်ထည့်ပါ။\n(ဥပမာ - 15000)")
+    await message.answer("💰 ဤ Service အတွက် ဈေးနှုန်းကို ရိုက်ထည့်ပါ။")
     await state.set_state(AdminSetup.waiting_for_service_price)
 
 @client_admin_router.message(AdminSetup.waiting_for_service_price)
 async def receive_service_price(message: Message, state: FSMContext):
-    # ဂဏန်းဟုတ်မဟုတ် စစ်ဆေးခြင်း
-    if not message.text.isdigit():
-        await message.answer("⚠️ ကျေးဇူးပြု၍ ဂဏန်းသာ ရိုက်ထည့်ပါ။ (ဥပမာ - 15000)")
-        return
-        
+    if not message.text.isdigit(): return
     await state.update_data(service_price=int(message.text))
-    
-    text = "⏳ ဤ Service ၏ သက်တမ်း (ရက်အရေအတွက်) ကို ရိုက်ထည့်ပါ။\nတစ်သက်လုံး (Lifetime) သုံးခွင့်ပြုမည်ဆိုပါက 0 ဟု ရိုက်ထည့်ပါ။\n(ဥပမာ - ၁ လ အတွက် 30)"
-    await message.answer(text)
+    await message.answer("⏳ ဤ Service ၏ သက်တမ်း (ရက်အရေအတွက်) ကို ရိုက်ထည့်ပါ။ Lifetime အတွက် 0 ရိုက်ပါ။")
     await state.set_state(AdminSetup.waiting_for_service_duration)
 
 @client_admin_router.message(AdminSetup.waiting_for_service_duration)
 async def receive_service_duration(message: Message, state: FSMContext):
-    if not message.text.isdigit():
-        await message.answer("⚠️ ကျေးဇူးပြု၍ ဂဏန်းသာ ရိုက်ထည့်ပါ။ (ဥပမာ - 30)")
-        return
-        
+    if not message.text.isdigit(): return
     await state.update_data(service_duration=int(message.text))
-    
-    text = "🔗 ဝယ်ယူသူများကို ထည့်သွင်းမည့် Private Group / Channel Link ကို ရိုက်ထည့်ပါ။\n(ဥပမာ - https://t.me/+AbCdEfGhIjK)"
-    await message.answer(text)
+    await message.answer("🔗 Private Group / Channel ID (သို့) Link ကို ရိုက်ထည့်ပါ။\n(မှတ်ချက် - တစ်ခါသုံးလင့်ခ်ထုတ်ပေးနိုင်ရန် Group ID ဥပမာ `-100123456789` သို့မဟုတ် `@channel_username` ကို ထည့်သွင်းပေးလျှင် ပိုကောင်းပါသည်)")
     await state.set_state(AdminSetup.waiting_for_service_link)
 
 @client_admin_router.message(AdminSetup.waiting_for_service_link)
 async def receive_service_link(message: Message, state: FSMContext, bot: Bot):
-    # ယာယီမှတ်ထားသော အချက်အလက်များအားလုံးကို ပြန်ထုတ်ယူခြင်း
     data = await state.get_data()
-    service_name = data['service_name']
-    service_price = data['service_price']
-    service_duration = data['service_duration']
-    service_link = message.text
-
-    # Database ထဲရှိ 'services' Collection သို့ အတည်ပြု သိမ်းဆည်းခြင်း
     await db.services.insert_one({
-        "bot_token": bot.token,
-        "name": service_name,
-        "price": service_price,
-        "duration": service_duration,
-        "link": service_link,
-        "status": "active"
+        "bot_token": bot.token, "name": data['service_name'], "price": data['service_price'],
+        "duration": data['service_duration'], "link": message.text, "status": "active"
     })
-
-    # အောင်မြင်ကြောင်း ပြန်လည်အကြောင်းကြားခြင်း
-    success_text = (
-        "✅ **Service အသစ် အောင်မြင်စွာ ဖန်တီးပြီးပါပြီ!**\n\n"
-        f"🔹 **အမည်:** {service_name}\n"
-        f"🔹 **ဈေးနှုန်း:** {service_price} ကျပ်\n"
-        f"🔹 **သက်တမ်း:** {'Lifetime' if service_duration == 0 else f'{service_duration} ရက်'}\n"
-        f"🔹 **Link:** {service_link}\n\n"
-        "Customer များ /start နှိပ်ပါက ဤ Service ကို မြင်တွေ့ရမည် ဖြစ်သည်။"
-    )
-    await message.answer(success_text, parse_mode="Markdown")
-    
-    # State များကို ရှင်းလင်းခြင်း
+    await message.answer("✅ Service အသစ် အောင်မြင်စွာ ဖန်တီးပြီးပါပြီ!")
     await state.clear()
+
+# ==========================================
+# 💥 NEW: လုပ်ငန်းရှင် အတည်ပြု/ပယ်ချမှု ကို ကိုင်တွယ်ခြင်း
+# ==========================================
+
+@client_admin_router.callback_query(F.data.startswith("sub_approve_"))
+async def approve_subscription(callback: CallbackQuery, bot: Bot):
+    sub_id = callback.data.split("_")[2]
+    
+    subscription = await db.subscriptions.find_one({"_id": ObjectId(sub_id)})
+    if not subscription or subscription.get("status") != "pending":
+        await callback.answer("⚠️ ဤစာရင်းသည် ကိုင်တွယ်ပြီးသား သို့မဟုတ် မရှိတော့ပါ။", show_alert=True)
+        return
+        
+    service = await db.services.find_one({"_id": ObjectId(subscription["service_id"])})
+    if not service:
+        await callback.answer("❌ ဝန်ဆောင်မှု ရှာမတွေ့တော့ပါ။", show_alert=True)
+        return
+        
+    # သက်တမ်း တွက်ချက်ခြင်း
+    duration = service.get("duration", 0)
+    start_date = datetime.utcnow()
+    end_date = start_date + timedelta(days=duration) if duration > 0 else None
+        
+    # Database တွင် Active ပြောင်းမည်
+    await db.subscriptions.update_one(
+        {"_id": ObjectId(sub_id)},
+        {"$set": {"status": "active", "start_date": start_date, "end_date": end_date}}
+    )
+    
+    # Link ကို အလိုအလျောက် ပြင်ဆင်ခြင်း
+    chat_id_or_link = service.get("link")
+    invite_link = chat_id_or_link
+    
+    # တကယ်လို့ Group ID (-100...) ထည့်ထားပြီး Bot က အဲဒီ Group ထဲမှာ Admin ဖြစ်နေပါက တစ်ခါသုံး Link ထုတ်ပေးမည်
+    if chat_id_or_link.startswith("-100") or chat_id_or_link.startswith("@"):
+        try:
+            chat_member_link = await bot.create_chat_invite_link(chat_id=chat_id_or_link, member_limit=1)
+            invite_link = chat_member_link.invite_link
+        except Exception:
+            pass # မအောင်မြင်ပါက ဖြည့်ထားသည့် စာသားအတိုင်း ပို့မည်
+            
+    # ဝယ်ယူသူထံ Group Link ပို့ပေးခြင်း
+    user_id = subscription["user_id"]
+    success_msg = (
+        f"✅ **လူကြီးမင်း၏ ငွေပေးချေမှု အောင်မြင်ပါသည်။**\n\n"
+        f"📦 **Service:** {service['name']}\n"
+        f"⏳ **သက်တမ်း:** {'Lifetime (တစ်သက်လုံး)' if duration == 0 else f'{duration} ရက်'}\n\n"
+        f"👇 အောက်ပါခလုတ်ကိုနှိပ်၍ Group/Channel သို့ ဝင်ရောက်နိုင်ပါပြီ။ (တစ်ခါသုံးလင့်ခ် ဖြစ်ပါသည်)"
+    )
+    user_kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🚀 Join Group / Channel", url=invite_link)]
+    ])
+    
+    try:
+        await bot.send_message(chat_id=user_id, text=success_msg, reply_markup=user_kb, parse_mode="Markdown")
+    except Exception:
+        pass
+        
+    # လုပ်ငန်းရှင်ထံ ပြန်ပြောင်းလဲပြသခြင်း
+    await callback.message.edit_caption(caption=callback.message.caption + "\n\n🟢 **Status: APPROVED (လက်ခံခဲ့ပြီး)**", reply_markup=None)
+    await callback.answer("✅ အောင်မြင်စွာ လက်ခံပြီးပါပြီ။")
+
+@client_admin_router.callback_query(F.data.startswith("sub_reject_"))
+async def reject_subscription(callback: CallbackQuery, bot: Bot):
+    sub_id = callback.data.split("_")[2]
+    
+    subscription = await db.subscriptions.find_one({"_id": ObjectId(sub_id)})
+    if not subscription or subscription.get("status") != "pending":
+        await callback.answer("⚠️ ဤစာရင်းသည် ကိုင်တွယ်ပြီးသား ဖြစ်ပါသည်။", show_alert=True)
+        return
+        
+    await db.subscriptions.update_one({"_id": ObjectId(sub_id)}, {"$set": {"status": "rejected"}})
+    
+    # ဝယ်ယူသူထံ ငြင်းပယ်ကြောင်း ပို့ခြင်း
+    user_id = subscription["user_id"]
+    reject_msg = "❌ **လူကြီးမင်း ပေးပို့ထားသော ငွေလွှဲပြေစာအား အတည်မပြုနိုင်ပါ။**\n\nကျေးဇူးပြု၍ ငွေလွှဲပမာဏနှင့် အချက်အလက်များ ပြန်လည်စစ်ဆေးပြီး `/start` နှိပ်ကာ ပြန်လည်ပေးပို့ပေးပါ။"
+    try:
+        await bot.send_message(chat_id=user_id, text=reject_msg)
+    except Exception:
+        pass
+        
+    await callback.message.edit_caption(caption=callback.message.caption + "\n\n🔴 **Status: REJECTED (ပယ်ချခဲ့ပြီး)**", reply_markup=None)
+    await callback.answer("❌ ပယ်ချလိုက်ပြီးပါပြီ။")
