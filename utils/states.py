@@ -17,5 +17,6 @@ class AdminBroadcast(StatesGroup):
 class EditService(StatesGroup):
     waiting_for_new_name = State()
     waiting_for_new_price = State()
+    waiting_for_new_note = State()
 
     
