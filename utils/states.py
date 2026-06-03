@@ -8,4 +8,7 @@ class AdminSetup(StatesGroup):
     waiting_for_service_link = State()
 
 class UserBooking(StatesGroup):
-    waiting_for_slip = State() # ဝယ်ယူသူထံမှ Slip ပုံကို စောင့်ဆိုင်းမည့် အခြေအနေ
+    waiting_for_slip = State()
+
+class AdminBroadcast(StatesGroup):
+    waiting_for_msg = State()ေ
