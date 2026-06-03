@@ -147,7 +147,7 @@ async def generate_invite_link(callback: CallbackQuery):
     try:
         temp_bot = Bot(token=token)
         # Super Admin ဝင်နိုင်ရန် One-Time Invite Link ထုတ်ပေးခြင်း
-        link_obj = await temp_bot.create_chat_invite_link(chat_id=chat_id, member_limit=1")
+        link_obj = await temp_bot.create_chat_invite_link(chat_id=chat_id, member_limit=1)
         invite_link = link_obj.invite_link
         await temp_bot.session.close()
         
