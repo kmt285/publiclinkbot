@@ -14,7 +14,8 @@ client_admin_router = Router()
 def admin_kb():
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="💳 ငွေပေးချေမှု အကောင့်ထည့်ရန်", callback_data="set_payment")],
-        [InlineKeyboardButton(text="➕ Service အသစ်ထည့်ရန်", callback_data="add_service")]
+        [InlineKeyboardButton(text="➕ Service အသစ်ထည့်ရန်", callback_data="add_service")],
+        [InlineKeyboardButton(text="📢 အသုံးပြုသူများထံ Message ပို့ရန် (Broadcast)", callback_data="broadcast_msg")] # ခလုတ်အသစ်
     ])
 
 # ==========================================
@@ -201,3 +202,36 @@ async def reject_subscription(callback: CallbackQuery, bot: Bot):
     new_caption = callback.message.caption + "\n\n🔴 **Status: REJECTED (ပယ်ချခဲ့ပြီး)**"
     await callback.message.edit_caption(caption=new_caption, reply_markup=None)
     await callback.answer("❌ ပယ်ချလိုက်ပြီးပါပြီ။")
+
+# 📢 5. Broadcast System (လုပ်ငန်းရှင်များအတွက်)
+# ==========================================
+from utils.states import AdminBroadcast
+import asyncio
+
+@client_admin_router.callback_query(F.data == "broadcast_msg")
+async def start_broadcast(callback: CallbackQuery, state: FSMContext, bot: Bot):
+    business = await db.businesses.find_one({"bot_token": bot.token})
+    if callback.from_user.id != business.get("owner_id"): return
+    
+    await callback.message.answer("📢 Bot ကို လာရောက်အသုံးပြုဖူးသူ အားလုံးထံ ပို့မည့် Message (စာသား) ကို ရိုက်ထည့်ပါ။")
+    await state.set_state(AdminBroadcast.waiting_for_msg)
+    await callback.answer()
+
+@client_admin_router.message(AdminBroadcast.waiting_for_msg)
+async def do_broadcast(message: Message, state: FSMContext, bot: Bot):
+    await message.answer("⏳ Message များကို စတင် ပို့ဆောင်နေပါပြီ။ ခေတ္တစောင့်ဆိုင်းပါ။...")
+    await state.clear()
+    
+    # ဤ Bot တွင် ဝယ်ယူဖူးသူ/လာနှိပ်ဖူးသူ ID အားလုံးကို ထုတ်ယူခြင်း (ပုံစံမတူအောင် Unique ယူမည်)
+    user_ids = await db.subscriptions.distinct("user_id", {"bot_token": bot.token})
+    
+    success_count = 0
+    for u_id in user_ids:
+        try:
+            await bot.send_message(chat_id=u_id, text=message.text)
+            success_count += 1
+            await asyncio.sleep(0.05) # Telegram Rate Limit မမိစေရန် ဖြည်းဖြည်းချင်းပို့မည်
+        except Exception:
+            pass
+            
+    await message.answer(f"✅ Message ပို့ဆောင်ခြင်း ပြီးဆုံးပါပြီ။\n📊 စုစုပေါင်း {success_count} ဦးထံသို့ အောင်မြင်စွာ ပို့ဆောင်နိုင်ခဲ့သည်။")
