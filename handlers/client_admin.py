@@ -79,24 +79,32 @@ async def receive_service_duration(message: Message, state: FSMContext):
         await message.answer("⚠️ ကျေးဇူးပြု၍ ဂဏန်းသာ ရိုက်ထည့်ပါ။ (ဥပမာ - 30)")
         return
     await state.update_data(service_duration=int(message.text))
+    
+    # 💥 Link မမေးမီ Note ကို အရင်မေးမည်
+    await message.answer("📝 ဤ Service နှင့်ပတ်သက်သည့် မှတ်ချက်/ရှင်းလင်းချက် (Note) ကို ရိုက်ထည့်ပါ။\n(ဥပမာ - Daily 5 Signals, No refund, etc.)")
+    await state.set_state(AdminSetup.waiting_for_service_note)
+
+@client_admin_router.message(AdminSetup.waiting_for_service_note)
+async def receive_service_note(message: Message, state: FSMContext):
+    await state.update_data(service_note=message.text) # Note အား သိမ်းဆည်းခြင်း
     await message.answer("🔗 Private Group / Channel ID ကို ရိုက်ထည့်ပါ။\n(မှတ်ချက် - လုံခြုံသော ဝင်ခွင့်စနစ်သုံးရန် Group ID အတိအကျ ဥပမာ `-100123456789` ကို ထည့်သွင်းပါ။)")
     await state.set_state(AdminSetup.waiting_for_service_link)
-
+    
 @client_admin_router.message(AdminSetup.waiting_for_service_link)
 async def receive_service_link(message: Message, state: FSMContext, bot: Bot):
     data = await state.get_data()
     
-    # DB ထဲသို့ သိမ်းဆည်းခြင်း
+    # DB ထဲသို့ သိမ်းဆည်းခြင်း (note ပါ ပေါင်းထည့်မည်)
     await db.services.insert_one({
         "bot_token": bot.token,
         "name": data['service_name'],
         "price": data['service_price'],
         "duration": data['service_duration'],
+        "note": data['service_note'], # 💥 အသစ်ထည့်ရန်
         "link": message.text,
         "status": "active"
     })
     
-    # 💥 Quote ငြိတဲ့ ပြဿနာမဖြစ်အောင် အပြင်မှာ ကြိုတင်ပြင်ဆင်ခြင်း
     duration_val = data['service_duration']
     duration_text = "Lifetime (တစ်သက်လုံး)" if duration_val == 0 else f"{duration_val} ရက်"
     
@@ -105,11 +113,12 @@ async def receive_service_link(message: Message, state: FSMContext, bot: Bot):
         f"🔹 **အမည်:** {data['service_name']}\n"
         f"🔹 **ဈေးနှုန်း:** {data['service_price']} ကျပ်\n"
         f"🔹 **သက်တမ်း:** {duration_text}\n"
+        f"📝 **မှတ်ချက် (Note):** {data['service_note']}\n" # 💥 အသစ်ထည့်ရန်
         f"🔹 **Group/Link:** {message.text}"
     )
     await message.answer(success_text, parse_mode="Markdown")
     await state.clear()
-
+  
 # ==========================================
 # ✅❌ 4. Slip Approval System (ငွေလွှဲပြေစာ အတည်ပြု/ပယ်ချ)
 # ==========================================
@@ -281,6 +290,7 @@ async def show_service_detail(callback: CallbackQuery):
         f"🔹 **အမည်:** {service['name']}\n"
         f"🔹 **ဈေးနှုန်း:** {service['price']} ကျပ်\n"
         f"🔹 **သက်တမ်း:** {duration_text}\n\n"
+        f"📝 **မှတ်ချက် (Note):** {service.get('note', 'မရှိပါ')}\n\n"
         "အောက်ပါ လုပ်ဆောင်ချက်များထဲမှ ရွေးချယ်ပါ-"
     )
     
