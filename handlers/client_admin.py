@@ -304,6 +304,7 @@ async def show_service_detail(callback: CallbackQuery):
     kb = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="✏️ အမည် ပြင်မည်", callback_data=f"edit_name_{service_id}")],
         [InlineKeyboardButton(text="✏️ ဈေးနှုန်း ပြင်မည်", callback_data=f"edit_price_{service_id}")],
+        [InlineKeyboardButton(text="✏️ မှတ်ချက် (Note) ပြင်မည်", callback_data=f"edit_note_{service_id}")],
         [InlineKeyboardButton(text="🗑 အပြီးတိုင် ဖျက်မည်", callback_data=f"delete_svc_{service_id}")],
         [InlineKeyboardButton(text="🔙 နောက်သို့", callback_data="manage_services")]
     ])
@@ -355,4 +356,21 @@ async def save_new_price(message: Message, state: FSMContext):
     service_id = data.get("edit_svc_id")
     await db.services.update_one({"_id": ObjectId(service_id)}, {"$set": {"price": int(message.text)}})
     await message.answer("✅ ဝန်ဆောင်မှု ဈေးနှုန်းကို ပြင်ဆင်ပြီးပါပြီ။ Admin Panel သို့ ပြန်သွားရန် /start ကို နှိပ်ပါ။")
+    await state.clear()
+
+# --- Note ပြင်ဆင်ခြင်း ---
+@client_admin_router.callback_query(F.data.startswith("edit_note_"))
+async def ask_edit_note(callback: CallbackQuery, state: FSMContext):
+    service_id = callback.data.split("_")[2]
+    await state.update_data(edit_svc_id=service_id)
+    await callback.message.answer("✏️ ဝန်ဆောင်မှု၏ **မှတ်ချက် (Note) အသစ်** ကို ရိုက်ထည့်ပါ။\n(မှတ်ချက် မထားလိုပါက 'မရှိပါ' ဟု ရိုက်ထည့်နိုင်ပါသည်။)")
+    await state.set_state(EditService.waiting_for_new_note)
+    await callback.answer()
+
+@client_admin_router.message(EditService.waiting_for_new_note)
+async def save_new_note(message: Message, state: FSMContext):
+    data = await state.get_data()
+    service_id = data.get("edit_svc_id")
+    await db.services.update_one({"_id": ObjectId(service_id)}, {"$set": {"note": message.text}})
+    await message.answer("✅ ဝန်ဆောင်မှု မှတ်ချက် (Note) ကို ပြင်ဆင်ပြီးပါပြီ။ Admin Panel သို့ ပြန်သွားရန် /start ကို နှိပ်ပါ။")
     await state.clear()
