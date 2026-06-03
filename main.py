@@ -1,26 +1,16 @@
 import asyncio
 import logging
 from aiogram import Bot, Dispatcher
-from aiogram.types import Message
-from aiogram.filters import CommandStart
 from aiohttp import web
 from core.config import MASTER_BOT_TOKEN, PORT
+from core.bot_manager import start_all_client_bots
+from handlers.master_admin import master_router
 
-# Logging သတ်မှတ်ခြင်း
 logging.basicConfig(level=logging.INFO)
-
-# Bot နှင့် Dispatcher တည်ဆောက်ခြင်း
-bot = Bot(token=MASTER_BOT_TOKEN)
-dp = Dispatcher()
-
-# Master Bot /start Command
-@dp.message(CommandStart())
-async def start_cmd(message: Message):
-    await message.answer("မင်္ဂလာပါ။ SaaS Master Bot မှ ကြိုဆိုပါတယ်။")
 
 # Render အတွက် Dummy Web Server (Error မတက်စေရန်)
 async def handle(request):
-    return web.Response(text="Bot is running smoothly on Render!")
+    return web.Response(text="SaaS Multi-Bot System is running smoothly on Render!")
 
 async def web_server():
     app = web.Application()
@@ -29,16 +19,27 @@ async def web_server():
     await runner.setup()
     site = web.TCPSite(runner, '0.0.0.0', PORT)
     await site.start()
-    logging.info(f"Web server started on port {PORT}")
+    logging.info(f"🌐 Web server started on port {PORT}")
 
-# Main Function (Bot နှင့် Web Server တွဲ Run မည်)
+# Main Function (Bot များနှင့် Web Server တွဲ Run မည်)
 async def main():
-    # Web server စတင်ခြင်း
+    # ၁။ Web server စတင်ခြင်း
     asyncio.create_task(web_server())
     
-    # Bot စတင်ခြင်း
-    logging.info("Starting Telegram Bot...")
-    await dp.start_polling(bot)
+    # ၂။ Master Bot Setup လုပ်ပြီး Run ခြင်း
+    master_bot = Bot(token=MASTER_BOT_TOKEN)
+    master_dp = Dispatcher()
+    master_dp.include_router(master_router)
+    
+    logging.info("👑 Starting Master Bot...")
+    asyncio.create_task(master_dp.start_polling(master_bot))
+    
+    # ၃။ Database ထဲရှိ လုပ်ငန်းရှင် Client Bots များအားလုံးကို Run ခြင်း
+    logging.info("🔄 Starting all Client Bots from Database...")
+    await start_all_client_bots()
+    
+    # System ကို မပိတ်သွားစေရန် ဆက်တိုက် Run ထားပေးခြင်း
+    await asyncio.Event().wait()
 
 if __name__ == "__main__":
     asyncio.run(main())
