@@ -36,25 +36,34 @@ async def client_start_cmd(message: Message, bot: Bot, state: FSMContext):
         else:
             await message.answer("⚠️ **ဤ Bot သည် လက်ရှိတွင် ဝန်ဆောင်မှု ယာယီရပ်နားထားပါသည်။**")
         return # 💥 ဤနေရာတွင် ရပ်ပစ်လိုက်မည်ဖြစ်၍ အောက်မှ ခလုတ်များ လုံးဝပေါ်လာတော့မည် မဟုတ်ပါ
-
+        
     # သက်တမ်း မကုန်သေးလျှင် ပုံမှန်အတိုင်း အလုပ်လုပ်မည်
     if message.from_user.id == owner_id:
         text = "🛠 **လုပ်ငန်းရှင် Admin Panel** မှ ကြိုဆိုပါတယ်။\n\nလိုအပ်သော လုပ်ဆောင်ချက်ကို အောက်ပါခလုတ်များမှ ရွေးချယ်ပါ။"
         await message.answer(text, reply_markup=admin_kb(), parse_mode="Markdown")
         
     else:
+        # လက်ရှိ User မှာ Active ဖြစ်နေသော ဝန်ဆောင်မှု ရှိ/မရှိ စစ်ဆေးခြင်း
+        active_subs = await db.subscriptions.find({"bot_token": bot.token, "user_id": message.from_user.id, "status": "active"}).to_list(length=10)
+        
         cursor = db.services.find({"bot_token": bot.token, "status": "active"})
         services = await cursor.to_list(length=100)
         
-        if not services:
-            await message.answer("🌟 ကျွန်ုပ်တို့၏ VIP ဝန်ဆောင်မှုမှ ကြိုဆိုပါတယ်။\n\nလောလောဆယ် ဝယ်ယူနိုင်သော ဝန်ဆောင်မှုများ မရှိသေးပါ။")
-            return
-            
-        text = "🌟 **ကျွန်ုပ်တို့၏ VIP ဝန်ဆောင်မှုမှ ကြိုဆိုပါတယ်။** 🌟\n\nဝယ်ယူလိုသော ဝန်ဆောင်မှုကို အောက်ပါခလုတ်များမှ ရွေးချယ်ပါ-"
-        
+        text = "🌟 **ကျွန်ုပ်တို့၏ VIP ဝန်ဆောင်မှုမှ ကြိုဆိုပါတယ်။** 🌟\n\n"
         keyboard = []
-        for s in services:
-            keyboard.append([InlineKeyboardButton(text=f"🔹 {s['name']} - {s['price']} ကျပ်", callback_data=f"buy_{s['_id']}")])
+        
+        if services:
+            text += "ဝယ်ယူလိုသော ဝန်ဆောင်မှုကို အောက်ပါခလုတ်များမှ ရွေးချယ်ပါ-\n"
+            for s in services:
+                keyboard.append([InlineKeyboardButton(text=f"🔹 {s['name']} - {s['price']} ကျပ်", callback_data=f"buy_{s['_id']}")])
+        else:
+            text += "လောလောဆယ် ဝယ်ယူနိုင်သော ဝန်ဆောင်မှုများ မရှိသေးပါ။\n"
+            
+        # 💥 NEW: Recovery/Backup ခလုတ်များ ခွဲခြားပြသခြင်း
+        if active_subs:
+            keyboard.append([InlineKeyboardButton(text="🔑 Backup Key (အကောင့်ပျက်လျှင် ပြန်ယူရန်)", callback_data="get_backup_key")])
+        else:
+            keyboard.append([InlineKeyboardButton(text="🔄 အကောင့်ဟောင်း ပြန်ယူရန် (Recover)", callback_data="recover_account")])
             
         reply_markup = InlineKeyboardMarkup(inline_keyboard=keyboard)
         await message.answer(text, reply_markup=reply_markup, parse_mode="Markdown")
@@ -189,3 +198,97 @@ async def handle_join_request(update: ChatJoinRequest, bot: Bot):
             await bot.revoke_chat_invite_link(chat_id=chat_id, invite_link=update.invite_link.invite_link)
         except Exception as e:
             print(f"Failed to revoke link: {e}")
+
+# ==========================================
+# 💥 NEW: Account Recovery (အကောင့်ဟောင်း ပြန်ယူခြင်း စနစ်)
+# ==========================================
+@client_router.callback_query(F.data == "get_backup_key")
+async def get_backup_key(callback: CallbackQuery, bot: Bot):
+    user_id = callback.from_user.id
+    
+    # Active ဖြစ်နေသော စာရင်းတစ်ခုကို ရှာမည်
+    sub = await db.subscriptions.find_one({"bot_token": bot.token, "user_id": user_id, "status": "active"})
+    if not sub:
+        await callback.answer("Active ဝန်ဆောင်မှု မရှိပါ။", show_alert=True)
+        return
+
+    backup_key = sub.get("backup_key")
+    # Key မရှိသေးပါက အသစ်ထုတ်ပေးမည် (ဥပမာ - BKP-A1B2C3)
+    if not backup_key:
+        random_str = "".join(random.choices(string.ascii_uppercase + string.digits, k=6))
+        backup_key = f"BKP-{random_str}"
+        
+        # User ၏ Active ဖြစ်နေသော စာရင်းအားလုံးတွင် ဤ Key ကို မှတ်သားမည်
+        await db.subscriptions.update_many(
+            {"bot_token": bot.token, "user_id": user_id, "status": "active"},
+            {"$set": {"backup_key": backup_key}}
+        )
+
+    text = (
+        f"🔑 **သင့်၏ Backup Key မှာ:** `{backup_key}`\n\n"
+        "⚠️ ဤ Key အား Copy ကူး၍ လုံခြုံသောနေရာတွင် သေချာစွာ မှတ်သားထားပါ။ သင့်အကောင့် ပျက်သွားပါက အကောင့်သစ်မှတစ်ဆင့် ဤ Key ကိုအသုံးပြု၍ သင်၏ ဝန်ဆောင်မှုများကို ပြန်လည်ရယူနိုင်ပါသည်။"
+    )
+    await callback.message.answer(text, parse_mode="Markdown")
+    await callback.answer()
+
+
+@client_router.callback_query(F.data == "recover_account")
+async def ask_recover_key(callback: CallbackQuery, state: FSMContext):
+    text = "🔄 **အကောင့်ဟောင်း ပြန်ယူခြင်း**\n\nလူကြီးမင်း၏ ယခင်အကောင့်မှ ရယူထားသော `Backup Key` (ဥပမာ BKP-XXXXXX) ကို ရိုက်ထည့်ပါ။"
+    await callback.message.answer(text)
+    await state.set_state(UserBooking.waiting_for_recovery_key)
+    await callback.answer()
+
+
+@client_router.message(UserBooking.waiting_for_recovery_key)
+async def process_recovery_key(message: Message, state: FSMContext, bot: Bot):
+    input_key = message.text.strip()
+    
+    # Database ထဲတွင် ထို Key ဖြင့် Active ဖြစ်နေသော စာရင်းများကို ရှာမည်
+    cursor = db.subscriptions.find({"bot_token": bot.token, "backup_key": input_key, "status": "active"})
+    subs = await cursor.to_list(length=100)
+
+    if not subs:
+        await message.answer("❌ Key မှားယွင်းနေပါသည် (သို့မဟုတ်) သက်တမ်းကုန်သွားသော Key ဖြစ်ပါသည်။\n\nပြန်လည်ကြိုးစားရန် /start ကို နှိပ်ပါ။")
+        await state.clear()
+        return
+
+    # လုံခြုံရေးအရ Key အသစ်တစ်ခု ချက်ချင်းပြောင်းပေးမည် (တစ်ခြားသူ ပြန်ခိုးသုံး၍ မရစေရန်)
+    new_random_str = "".join(random.choices(string.ascii_uppercase + string.digits, k=6))
+    new_backup_key = f"BKP-{new_random_str}"
+    
+    for sub in subs:
+        old_user_id = sub["user_id"]
+        service_id = sub["service_id"]
+
+        # 💥 NEW: အကောင့်ဟောင်းအား သက်ဆိုင်ရာ Group များမှ အလိုအလျောက် ကန်ထုတ်ခြင်း 💥
+        service = await db.services.find_one({"_id": ObjectId(service_id)})
+        if service:
+            chat_id = service.get("link")
+            # Group ID အမှန်ဖြစ်မှသာ Kick လုပ်မည်
+            if chat_id and (chat_id.startswith("-100") or chat_id.startswith("@")):
+                try:
+                    await bot.ban_chat_member(chat_id=chat_id, user_id=old_user_id)
+                    await bot.unban_chat_member(chat_id=chat_id, user_id=old_user_id)
+                except Exception as e:
+                    print(f"Failed to kick old user {old_user_id}: {e}")
+
+        # ထို့နောက် Database တွင် အကောင့်သစ်၏ အချက်အလက်များဖြင့် အစားထိုး Update လုပ်မည်
+        await db.subscriptions.update_one(
+            {"_id": sub["_id"]},
+            {"$set": {
+                "user_id": message.from_user.id,
+                "username": message.from_user.username,
+                "full_name": message.from_user.full_name,
+                "backup_key": new_backup_key
+            }}
+        )
+
+    success_text = (
+        "✅ **အကောင့်ပြန်လည်ရယူခြင်း အောင်မြင်ပါသည်။**\n\n"
+        "ယခင်အကောင့်ရှိ ဝန်ဆောင်မှုများကို ဤအကောင့်သစ်သို့ အောင်မြင်စွာ လွှဲပြောင်းပေးလိုက်ပါပြီ။ \n"
+        "*(လုံခြုံရေးအရ သင်၏ ယခင်အကောင့်ဟောင်းအား Group များမှ အလိုအလျောက် ဖယ်ရှားလိုက်ပါပြီ)*\n\n"
+        "ဝန်ဆောင်မှုများကို ဆက်လက်အသုံးပြုရန် /start ကို ပြန်နှိပ်ပါ။"
+    )
+    await message.answer(success_text, parse_mode="Markdown")
+    await state.clear()
