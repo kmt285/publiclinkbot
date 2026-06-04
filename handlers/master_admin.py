@@ -107,7 +107,8 @@ async def view_system_stats_cb(callback: CallbackQuery):
     )
     
     kb = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="🏢 လုပ်ငန်းရှင်များစာရင်း အသေးစိတ်ကြည့်ရန်", callback_data="view_businesses")]
+        [InlineKeyboardButton(text="🏢 လုပ်ငန်းရှင်များစာရင်း အသေးစိတ်ကြည့်ရန်", callback_data="view_businesses")],
+        [InlineKeyboardButton(text="🧹 Database အမှိုက်များ ရှင်းလင်းမည်", callback_data="clean_database")] 
     ])
     await callback.message.edit_text(stats_text, reply_markup=kb, parse_mode="Markdown")
 
@@ -192,7 +193,10 @@ async def view_business_detail(callback: CallbackQuery):
             keyboard.append([InlineKeyboardButton(text=f"🔗 '{s['name']}' Invite Link ယူရန်", callback_data=f"genlink_{str(s['_id'])}")])
     
     keyboard.append([InlineKeyboardButton(text=toggle_btn, callback_data=f"togglebot_{str(biz['_id'])}")])
+    keyboard.append([InlineKeyboardButton(text="🗑 Bot အား အပြီးတိုင် ဖျက်သိမ်းမည်", callback_data=f"harddelete_{str(biz['_id'])}")])
     keyboard.append([InlineKeyboardButton(text="🔙 နောက်သို့", callback_data="view_businesses")])
+    
+    await callback.message.edit_text(text, reply_markup=InlineKeyboardMarkup(inline_keyboard=keyboard), parse_mode="Markdown", disable_web_page_preview=True)
     
     await callback.message.edit_text(text, reply_markup=InlineKeyboardMarkup(inline_keyboard=keyboard), parse_mode="Markdown", disable_web_page_preview=True)
 
@@ -244,3 +248,60 @@ async def toggle_business_bot(callback: CallbackQuery):
     await callback.answer(msg, show_alert=True)
     
     await callback.message.edit_text(f"{msg}\n\nအပြောင်းအလဲအား မြင်တွေ့ရရန် နောက်သို့ပြန်ထွက်ပြီး ပြန်ဝင်ကြည့်ပါ။", reply_markup=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="🔙 စာရင်းများသို့ ပြန်သွားရန်", callback_data="view_businesses")]]))
+
+# ==========================================
+# 🧹 Database ရှင်းလင်းရေး (Clean Database - 7 Days Grace Period)
+# ==========================================
+@master_router.callback_query(F.data == "clean_database")
+async def clean_database_handler(callback: CallbackQuery):
+    if callback.from_user.id not in SUPER_ADMINS: return 
+    
+    await callback.message.edit_text("⏳ **Database အား စတင် ရှင်းလင်းနေပါသည်...**\nခေတ္တစောင့်ဆိုင်းပါ။")
+    
+    # ၁။ (၇) ရက် ကျော်လွန်သွားသော သက်တမ်းကုန် Bot များ၏ Data များကို ရှင်းလင်းမည် (Token ကို ချန်ထားမည်)
+    seven_days_ago = datetime.utcnow() - timedelta(days=7)
+    expired_businesses = await db.businesses.find({"expires_at": {"$lt": seven_days_ago}}).to_list(length=1000)
+    
+    cleaned_bots_count = 0
+    for biz in expired_businesses:
+        token = biz["bot_token"]
+        # ထို Bot နှင့်သက်ဆိုင်သော Service နှင့် Subscription အားလုံးကို ရှင်းလင်းမည်
+        await db.services.delete_many({"bot_token": token})
+        await db.subscriptions.delete_many({"bot_token": token})
+        cleaned_bots_count += 1
+
+    # ၂။ ငြင်းပယ်ခံထားရသော (Rejected) စာရင်းဟောင်းများကို ရှင်းလင်းမည်
+    del_rejected = await db.subscriptions.delete_many({"status": "rejected"})
+    
+    text = (
+        "✅ **Database ရှင်းလင်းခြင်း အောင်မြင်ပါသည်။**\n\n"
+        f"🧹 သက်တမ်း (၇) ရက်ကျော်လွန်သွားသော Bot ပေါင်း **{cleaned_bots_count}** ခု၏ Services နှင့် Users များကို ရှင်းလင်းပြီးပါပြီ။\n*(မှတ်ချက် - ၎င်းတို့၏ Bot Token များကိုမူ ဆက်လက် ထိန်းသိမ်းထားပါသည်)*\n\n"
+        f"🗑 ပယ်ချထားသော (Rejected) ပြေစာဟောင်း **{del_rejected.deleted_count}** ခုကို ရှင်းလင်းပြီးပါပြီ။"
+    )
+    
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🔙 စာရင်းဇယားသို့ ပြန်သွားရန်", callback_data="show_stats")]
+    ])
+    await callback.message.edit_text(text, reply_markup=kb, parse_mode="Markdown")
+
+# ==========================================
+# 🗑 အပြီးတိုင် ဖျက်သိမ်းခြင်း (Hard Delete)
+# ==========================================
+@master_router.callback_query(F.data.startswith("harddelete_"))
+async def hard_delete_bot(callback: CallbackQuery):
+    if callback.from_user.id not in SUPER_ADMINS: return 
+    
+    biz_id = callback.data.split("_")[1]
+    biz = await db.businesses.find_one({"_id": ObjectId(biz_id)})
+    
+    if biz:
+        token = biz["bot_token"]
+        # Database ထဲမှ ဤ Bot နှင့် ပတ်သက်သမျှ အရာအားလုံးကို အမြစ်ပြတ် ရှင်းထုတ်မည်
+        await db.businesses.delete_one({"_id": ObjectId(biz_id)})
+        await db.services.delete_many({"bot_token": token})
+        await db.subscriptions.delete_many({"bot_token": token})
+        
+    await callback.answer("✅ Bot အား Database မှ အပြီးတိုင် ဖျက်သိမ်းလိုက်ပါပြီ။", show_alert=True)
+    
+    # ရှင်းပြီးပါက လုပ်ငန်းရှင်များစာရင်းသို့ ပြန်သွားမည်
+    await list_businesses(callback)
