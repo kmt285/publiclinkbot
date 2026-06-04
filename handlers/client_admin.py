@@ -14,6 +14,7 @@ client_admin_router = Router()
 # ==========================================
 def admin_kb(is_owner=False):
     kb = [
+        [InlineKeyboardButton(text="📝 Welcome Msg သတ်မှတ်ရန်", callback_data="set_welcome_msg")],
         [InlineKeyboardButton(text="💳 ငွေပေးချေမှု အကောင့်ထည့်ရန်", callback_data="set_payment")],
         [InlineKeyboardButton(text="➕ Service အသစ်ထည့်ရန်", callback_data="add_service")],
         [InlineKeyboardButton(text="⚙️ ဝန်ဆောင်မှုများ ပြင်/ဖျက်ရန်", callback_data="manage_services")],
@@ -452,4 +453,29 @@ async def delete_sub_admin(message: Message, state: FSMContext, bot: Bot):
         {"$pull": {"sub_admins": remove_id}}
     )
     await message.answer("✅ Admin အကူ (Sub-Admin) အား အောင်မြင်စွာ ဖယ်ရှားပြီးပါပြီ။\nAdmin Panel သို့ ပြန်သွားရန် /start ကိုနှိပ်ပါ။")
+    await state.clear()
+
+# ==========================================
+# 📝 Welcome Message သတ်မှတ်ခြင်း
+# ==========================================
+@client_admin_router.callback_query(F.data == "set_welcome_msg")
+async def set_welcome_msg_callback(callback: CallbackQuery, state: FSMContext, bot: Bot):
+    business = await db.businesses.find_one({"bot_token": bot.token})
+    owner_id = business.get("owner_id")
+    sub_admins = business.get("sub_admins", [])
+    if callback.from_user.id != owner_id and callback.from_user.id not in sub_admins:
+        return
+
+    text = "📝 **Welcome Message သတ်မှတ်ရန်**\n\nဝယ်ယူသူများ Bot သို့ `/start` နှိပ်လိုက်သောအခါ ပထမဆုံး မြင်တွေ့ရမည့် နှုတ်ခွန်းဆက် စာသားကို ရိုက်ထည့်ပါ။\n*(ဥပမာ - ကျွန်ုပ်တို့၏ VIP Channel မှ နွေးထွေးစွာ ကြိုဆိုပါတယ်...)*"
+    await callback.message.answer(text, parse_mode="Markdown")
+    await state.set_state(AdminSetup.waiting_for_welcome_msg)
+    await callback.answer()
+
+@client_admin_router.message(AdminSetup.waiting_for_welcome_msg)
+async def receive_welcome_msg(message: Message, bot: Bot, state: FSMContext):
+    await db.businesses.update_one(
+        {"bot_token": bot.token}, 
+        {"$set": {"welcome_msg": message.text}} # Database သို့ welcome_msg အဖြစ် သိမ်းဆည်းခြင်း
+    )
+    await message.answer("✅ Welcome Message ကို အောင်မြင်စွာ မှတ်သားပြီးပါပြီ။ \nAdmin Panel သို့ ပြန်သွားရန် /start ကိုနှိပ်ပါ။")
     await state.clear()
