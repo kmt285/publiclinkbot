@@ -40,7 +40,7 @@ async def main():
     # 💥 NEW: Auto-Kick Scheduler ကို စတင်ခြင်း 💥
     scheduler = AsyncIOScheduler()
     # ဤနေရာတွင် ၁ နာရီတစ်ခါ စစ်ဆေးရန် သတ်မှတ်ထားသည် (စမ်းသပ်လိုပါက hours=1 အစား minutes=1 ဟု ပြင်နိုင်သည်)
-    scheduler.add_job(check_expired_subscriptions, "interval", hours=1) 
+    scheduler.add_job(check_expired_subscriptions, "interval", minutes=1) 
     scheduler.start()
     logging.info("⏱ Scheduler started for auto-kick system.")
     
