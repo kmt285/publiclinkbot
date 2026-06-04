@@ -25,25 +25,31 @@ async def client_start_cmd(message: Message, bot: Bot, state: FSMContext):
         await message.answer("🚫 **ဤ Bot အား Super Admin မှ ယာယီရပ်ဆိုင်း (Suspend) ထားပါသည်။**\n\nအသေးစိတ်သိရှိလိုပါက Platform Admin ထံ ဆက်သွယ်ပါ။")
         return
 
-    owner_id = business.get("owner_id")
+owner_id = business.get("owner_id")
+    sub_admins = business.get("sub_admins", []) 
+    
+    user_id = message.from_user.id
+    is_owner = (user_id == owner_id)
+    is_sub_admin = (user_id in sub_admins)
 
-    # 💥 NEW: (၁) လ သက်တမ်း ကုန်/မကုန် စစ်ဆေးခြင်း
+    # (၁) လ သက်တမ်း ကုန်/မကုန် စစ်ဆေးခြင်း
     expires_at = business.get("expires_at")
     if expires_at and datetime.utcnow() > expires_at:
         # သက်တမ်းကုန်နေလျှင်
-        if message.from_user.id == owner_id:
+        if is_owner or is_sub_admin:
             await message.answer("⚠️ **လူကြီးမင်း၏ Bot အသုံးပြုခွင့် (၁) လ (Free Trial) သက်တမ်း ကုန်ဆုံးသွားပါပြီ။**\n\nဆက်လက်အသုံးပြုလိုပါက System Admin ထံ ဆက်သွယ်၍ သက်တမ်းတိုးပါ။")
         else:
             await message.answer("⚠️ **ဤ Bot သည် လက်ရှိတွင် ဝန်ဆောင်မှု ယာယီရပ်နားထားပါသည်။**")
-        return # 💥 ဤနေရာတွင် ရပ်ပစ်လိုက်မည်ဖြစ်၍ အောက်မှ ခလုတ်များ လုံးဝပေါ်လာတော့မည် မဟုတ်ပါ
-        
-    # သက်တမ်း မကုန်သေးလျှင် ပုံမှန်အတိုင်း အလုပ်လုပ်မည်
-    if message.from_user.id == owner_id:
-        text = "🛠 **လုပ်ငန်းရှင် Admin Panel** မှ ကြိုဆိုပါတယ်။\n\nလိုအပ်သော လုပ်ဆောင်ချက်ကို အောက်ပါခလုတ်များမှ ရွေးချယ်ပါ။"
-        await message.answer(text, reply_markup=admin_kb(), parse_mode="Markdown")
+        return 
+
+    # ပိုင်ရှင် (သို့) Admin အကူ ဖြစ်နေလျှင် Admin Panel ကို ပြမည်
+    if is_owner or is_sub_admin:
+        text = "🛠 **လုပ်ငန်းရှင် / Admin Panel** မှ ကြိုဆိုပါတယ်။\n\nလိုအပ်သော လုပ်ဆောင်ချက်ကို အောက်ပါခလုတ်များမှ ရွေးချယ်ပါ။"
+        from handlers.client_admin import admin_kb
+        await message.answer(text, reply_markup=admin_kb(is_owner=is_owner), parse_mode="Markdown")
         
     else:
-        # လက်ရှိ User မှာ Active ဖြစ်နေသော ဝန်ဆောင်မှု ရှိ/မရှိ စစ်ဆေးခြင်း
+
         active_subs = await db.subscriptions.find({"bot_token": bot.token, "user_id": message.from_user.id, "status": "active"}).to_list(length=10)
         
         cursor = db.services.find({"bot_token": bot.token, "status": "active"})
