@@ -45,7 +45,6 @@ async def client_start_cmd(message: Message, bot: Bot, state: FSMContext):
     # ပိုင်ရှင် (သို့) Admin အကူ ဖြစ်နေလျှင် Admin Panel ကို ပြမည်
     if is_owner or is_sub_admin:
         text = "🛠 **လုပ်ငန်းရှင် / Admin Panel** မှ ကြိုဆိုပါတယ်။\n\nလိုအပ်သော လုပ်ဆောင်ချက်ကို အောက်ပါခလုတ်များမှ ရွေးချယ်ပါ။"
-        from handlers.client_admin import admin_kb
         await message.answer(text, reply_markup=admin_kb(is_owner=is_owner), parse_mode="Markdown")
         
     else:
