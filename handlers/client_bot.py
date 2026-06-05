@@ -93,16 +93,18 @@ async def buy_service_callback(callback: CallbackQuery, state: FSMContext, bot: 
     duration_text = "Lifetime (တစ်သက်လုံး)" if duration_val == 0 else f"{duration_val} ရက်"
     service_note = service.get("note", "မရှိပါ") # 💥 Note အား ဆွဲထုတ်ခြင်း
     
+    # 💥 ပြင်ဆင်ထားသော HTML ကုဒ်
     text = (
-        f"💳 **'{service['name']}' ကို ဝယ်ယူရန် Ngwe Lwair ရမည့် အချက်အလက်**\n\n"
+        f"💳 <b>'{service['name']}' ကို ဝယ်ယူရန် ငွေလွှဲရမည့် အချက်အလက်</b>\n\n"
         f"{payment_info}\n\n"
-        f"💵 **ကျသင့်ငွေ:** {service['price']} ကျပ်\n"
-        f"⏳ **သက်တမ်း:** {duration_text}\n"
-        f"📝 **အသေးစိတ် (Note):** {service_note}\n\n" # 💥 ဤနေရာတွင် User အား ပြသမည်
-        "⚠️ **အရေးကြီးသည်:** ငွေလွှဲပြီးပါက ငွေလွှဲပြေစာ (Slip Screenshot) ကို ဤနေရာသို့ ဓာတ်ပုံ (Photo) အဖြစ် ပို့ပေးပါ။"
+        f"💵 <b>ကျသင့်ငွေ:</b> {service['price']} ကျပ်\n"
+        f"⏳ <b>သက်တမ်း:</b> {duration_text}\n"
+        f"📝 <b>အသေးစိတ် (Note):</b> {service_note}\n\n"
+        "⚠️ <b>အရေးကြီးသည်:</b> ငွေလွှဲပြီးပါက ငွေလွှဲပြေစာ (Slip Screenshot) ကို ဤနေရာသို့ ဓာတ်ပုံ (Photo) အဖြစ် ပို့ပေးပါ။"
     )
     
-    await callback.message.answer(text, parse_mode="Markdown")
+    # 💥 parse_mode="HTML" ပြောင်းသည်
+    await callback.message.answer(text, parse_mode="HTML")
     await state.set_state(UserBooking.waiting_for_slip)
     await state.update_data(buy_service_id=service_id_str)
     await callback.answer()
@@ -140,22 +142,24 @@ async def receive_slip_photo(message: Message, state: FSMContext, bot: Bot):
     owner_id = business.get("owner_id")
     photo_id = message.photo[-1].file_id # အကြည်ဆုံးပုံကို ယူမည်
     
+    # 💥 ပြင်ဆင်ထားသော HTML ကုဒ်
     admin_text = (
-        f"💰 **ငွေလွှဲပြေစာအသစ် ရောက်ရှိလာပါသည်!**\n\n"
-        f"👤 **ဝယ်ယူသူ:** {message.from_user.full_name} (@{message.from_user.username})\n"
-        f"📦 **Service:** {service['name']}\n"
-        f"💵 **ဈေးနှုန်း:** {service['price']} ကျပ်\n"
+        f"💰 <b>ငွေလွှဲပြေစာအသစ် ရောက်ရှိလာပါသည်!</b>\n\n"
+        f"👤 <b>ဝယ်ယူသူ:</b> {message.from_user.full_name} (@{message.from_user.username})\n"
+        f"📦 <b>Service:</b> {service['name']}\n"
+        f"💵 <b>ဈေးနှုန်း:</b> {service['price']} ကျပ်\n"
     )
     
     admin_keyboard = InlineKeyboardMarkup(inline_keyboard=[
         [
-            InlineKeyboardButton(text="✅ Approve (လက်ခံမည်)", callback_data=f"sub_approve_{sub_id}"),
-            InlineKeyboardButton(text="❌ Reject (ပယ်ချမည်)", callback_data=f"sub_reject_{sub_id}")
+            InlineKeyboardButton(text="✅ Approve", callback_data=f"sub_approve_{sub_id}"),
+            InlineKeyboardButton(text="❌ Reject", callback_data=f"sub_reject_{sub_id}")
         ]
     ])
     
     try:
-        await bot.send_photo(chat_id=owner_id, photo=photo_id, caption=admin_text, reply_markup=admin_keyboard, parse_mode="Markdown")
+        # 💥 parse_mode="HTML" ပြောင်းသည်
+        await bot.send_photo(chat_id=owner_id, photo=photo_id, caption=admin_text, reply_markup=admin_keyboard, parse_mode="HTML")
     except Exception as e:
         print(f"Failed to send slip to admin: {e}")
 
