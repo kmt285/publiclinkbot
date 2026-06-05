@@ -1,5 +1,6 @@
 import asyncio
 import logging
+from datetime import datetime
 from aiogram import Bot, Dispatcher
 from aiohttp import web
 from core.config import MASTER_BOT_TOKEN, PORT
@@ -37,10 +38,11 @@ async def main():
     logging.info("🔄 Starting all Client Bots from Database...")
     await start_all_client_bots()
     
-    # 💥 NEW: Auto-Kick Scheduler ကို စတင်ခြင်း 💥
+   # 💥 NEW: Auto-Kick Scheduler ကို စတင်ခြင်း 💥
     scheduler = AsyncIOScheduler()
-    # ဤနေရာတွင် ၁ နာရီတစ်ခါ စစ်ဆေးရန် သတ်မှတ်ထားသည် (စမ်းသပ်လိုပါက hours=1 အစား minutes=1 ဟု ပြင်နိုင်သည်)
-    scheduler.add_job(check_expired_subscriptions, "interval", hours=1) 
+    
+    scheduler.add_job(check_expired_subscriptions, "interval", hours=1, next_run_time=datetime.now()) 
+    
     scheduler.start()
     logging.info("⏱ Scheduler started for auto-kick system.")
     
