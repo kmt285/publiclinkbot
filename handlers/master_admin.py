@@ -62,12 +62,21 @@ async def receive_bot_token(message: Message, state: FSMContext):
     if existing_bot:
         return await message.answer("⚠️ ဤ Bot Token မှာ စနစ်ထဲတွင် ထည့်သွင်းပြီးသား ဖြစ်နေပါသည်။")
 
-    await message.answer("⏳ Bot အား စနစ်နှင့် ချိတ်ဆက်နေပါသည်... ခေတ္တစောင့်ဆိုင်းပါ။")
+    await message.answer("⏳ Bot Token အား စစ်ဆေးနေပါသည်... ခေတ္တစောင့်ဆိုင်းပါ။")
 
+    # 💥 NEW: Token အစစ်အမှန် ဟုတ်/မဟုတ် Telegram သို့ လှမ်း၍ စစ်ဆေးခြင်း 💥
+    try:
+        temp_bot = Bot(token=token)
+        me = await temp_bot.get_me()
+        bot_username = me.username
+        await temp_bot.session.close() # စစ်ဆေးပြီးပါက ပြန်ပိတ်မည်
+    except Exception as e:
+        return await message.answer("❌ **Bot Token အမှားဖြစ်နေပါသည်။** (သို့မဟုတ်) ပိတ်ပင်ခံထားရသော Bot ဖြစ်နေပါသည်။\n\nကျေးဇူးပြု၍ @BotFather မှ Token အမှန်ကိုသာ Copy ကူး၍ ထပ်မံရိုက်ထည့်ပါ။")
+
+    # မှန်ကန်ပါက ဆက်လက်အလုပ်လုပ်မည်
     created_date = datetime.utcnow()
     expires_date = created_date + timedelta(days=30)
 
-    # 💥 Database ထဲသို့ Bot အသစ် မှတ်သားခြင်း
     await db.businesses.insert_one({
         "bot_token": token, 
         "status": "active",
@@ -77,13 +86,12 @@ async def receive_bot_token(message: Message, state: FSMContext):
         "expires_at": expires_date
     })
     
-    # 💥 Client Bot ကို ချက်ချင်း အသက်သွင်းခြင်း
     from core.bot_manager import start_client_bot 
     asyncio.create_task(start_client_bot(token))
     
-    success_text = "✅ **Client Bot အသစ် အောင်မြင်စွာ ထည့်သွင်းပြီးပါပြီ။**\n\n"
+    success_text = f"✅ **Client Bot (@{bot_username}) အသစ် အောင်မြင်စွာ ထည့်သွင်းပြီးပါပြီ။**\n\n"
     success_text += "🎁 ဤ Bot အား (၁) လ အခမဲ့ အသုံးပြုခွင့် ပေးထားပါသည်။\n"
-    success_text += "👉 ယခု သင့် Bot ဆီသွား၍ `/start` ကိုနှိပ်ပြီး ဝန်ဆောင်မှုများကို စတင် ဖန်တီးနိုင်ပါပြီ။"
+    success_text += f"👉 ယခု သင့် Bot ( https://t.me/{bot_username} ) ဆီသွား၍ `/start` ကိုနှိပ်ပြီး ဝန်ဆောင်မှုများကို စတင် ဖန်တီးနိုင်ပါပြီ။"
     await message.answer(success_text, parse_mode="Markdown")
     await state.clear()
 
