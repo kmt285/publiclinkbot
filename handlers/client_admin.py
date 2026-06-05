@@ -101,16 +101,39 @@ async def receive_service_note(message: Message, state: FSMContext):
     
 @client_admin_router.message(AdminSetup.waiting_for_service_link)
 async def receive_service_link(message: Message, state: FSMContext, bot: Bot):
+    chat_id = message.text.strip()
     data = await state.get_data()
     
-    # DB ထဲသို့ သိမ်းဆည်းခြင်း (note ပါ ပေါင်းထည့်မည်)
+    # 💥 NEW: Group/Channel အတွင်း Bot အား Admin ခန့်ထားခြင်း ရှိ/မရှိ စစ်ဆေးခြင်း 💥
+    if chat_id.startswith("-100") or chat_id.startswith("@"):
+        try:
+            bot_user = await bot.get_me()
+            # Bot ၏ လက်ရှိ ရာထူးကို သွားရောက်စစ်ဆေးမည်
+            member = await bot.get_chat_member(chat_id=chat_id, user_id=bot_user.id)
+            
+            status_str = str(member.status)
+            if "administrator" not in status_str and "creator" not in status_str:
+                return await message.answer("❌ **Error: ဤ Group/Channel တွင် Bot အား Admin အဖြစ် မခန့်ထားသေးပါ။**\n\nကျေးဇူးပြု၍ Bot အား Admin အဖြစ် အရင်ခန့်အပ်ပြီးမှ Group ID ကို ပြန်လည်ရိုက်ထည့်ပါ။")
+            
+            # Admin ဖြစ်ပါက လိုအပ်သော အခွင့်အရေး (Permissions) များ ပါ/မပါ ထပ်စစ်မည်
+            if "administrator" in status_str:
+                can_invite = getattr(member, "can_invite_users", False)
+                can_restrict = getattr(member, "can_restrict_members", False)
+                
+                if not can_invite or not can_restrict:
+                    return await message.answer("❌ **Error: အခွင့်အရေး မပြည့်စုံပါ။**\n\nBot အား Admin ခန့်ထားသော်လည်း လိုအပ်သော လုပ်ပိုင်ခွင့်များ မပေးထားပါ။ ကျေးဇူးပြု၍ Admin ခန့်သည့်နေရာတွင် **'Ban Users'** နှင့် **'Invite Users via Link'** အခွင့်အရေးများကို ဖွင့်ပေးပြီးမှ ID ကို ပြန်ထည့်ပါ။")
+                    
+        except Exception as e:
+            return await message.answer("❌ **Error: Group/Channel သို့ ဝင်ရောက်၍ မရပါ။**\n\nအောက်ပါတို့ကို စစ်ဆေးပါ-\n၁။ Group/Channel ID အမှန်ဖြစ်ရပါမည်။ (ဥပမာ: -1001234567)\n၂။ Bot အား ထို Group/Channel ထဲသို့ ကြိုတင်၍ Admin အဖြစ် ထည့်သွင်းထားရပါမည်။\n\nပြင်ဆင်ပြီးပါက ID အား ထပ်မံရိုက်ထည့်ပါ။")
+            
+    # အားလုံး မှန်ကန်ပါက DB ထဲသို့ သိမ်းဆည်းခြင်း 
     await db.services.insert_one({
         "bot_token": bot.token,
         "name": data['service_name'],
         "price": data['service_price'],
         "duration": data['service_duration'],
-        "note": data['service_note'], # 💥 အသစ်ထည့်ရန်
-        "link": message.text,
+        "note": data.get('service_note', 'မရှိပါ'), 
+        "link": chat_id,
         "status": "active"
     })
     
@@ -122,8 +145,8 @@ async def receive_service_link(message: Message, state: FSMContext, bot: Bot):
         f"🔹 **အမည်:** {data['service_name']}\n"
         f"🔹 **ဈေးနှုန်း:** {data['service_price']} ကျပ်\n"
         f"🔹 **သက်တမ်း:** {duration_text}\n"
-        f"📝 **မှတ်ချက် (Note):** {data['service_note']}\n" # 💥 အသစ်ထည့်ရန်
-        f"🔹 **Group/Link:** {message.text}"
+        f"📝 **မှတ်ချက် (Note):** {data.get('service_note', 'မရှိပါ')}\n" 
+        f"🔹 **Group/Link:** {chat_id}"
     )
     await message.answer(success_text, parse_mode="Markdown")
     await state.clear()
