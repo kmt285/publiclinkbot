@@ -6,6 +6,7 @@ from bson.objectid import ObjectId
 from core.database import db
 from utils.states import AdminSetup, AdminBroadcast, EditService
 import asyncio
+import random
 
 client_admin_router = Router()
 
@@ -477,24 +478,32 @@ async def manage_sub_admins(callback: CallbackQuery, bot: Bot):
     ])
     await callback.message.edit_text(text, reply_markup=kb, parse_mode="Markdown")
 
+# ==========================================
+# 💥 NEW: Admin Invite Code ထုတ်ပေးခြင်း
+# ==========================================
 @client_admin_router.callback_query(F.data == "add_sub_admin")
-async def add_sub_admin_prompt(callback: CallbackQuery, state: FSMContext):
-    await callback.message.answer("➕ **Admin အကူ အသစ်ထည့်ရန်**\n\nခန့်အပ်လိုသော သူ၏ **Telegram User ID** အား ဂဏန်းအတိုင်း ရိုက်ထည့်ပါ။\n*(User ID သိလိုပါက ထိုသူအား @userinfobot သို့ သွားရောက်နှိပ်ခိုင်းပါ။)*")
-    await state.set_state(AdminSetup.waiting_for_sub_admin_id)
-    await callback.answer()
-
-@client_admin_router.message(AdminSetup.waiting_for_sub_admin_id)
-async def save_sub_admin(message: Message, state: FSMContext, bot: Bot):
-    if not message.text.isdigit():
-        return await message.answer("⚠️ User ID သည် ဂဏန်းသာ ဖြစ်ရပါမည်။")
+async def generate_sub_admin_code(callback: CallbackQuery, bot: Bot):
+    # ကျပန်း ဂဏန်း ၆ လုံးပါသော Code ဖန်တီးမည်
+    random_code = f"ADMIN-{random.randint(100000, 999999)}"
     
-    new_admin_id = int(message.text)
+    # DB ထဲသို့ Code အသစ်ကို ယာယီမှတ်သားထားမည်
     await db.businesses.update_one(
         {"bot_token": bot.token},
-        {"$addToSet": {"sub_admins": new_admin_id}} # ထပ်နေပါက နှစ်ခါမမှတ်စေရန် $addToSet သုံးသည်
+        {"$set": {"admin_invite_code": random_code}}
     )
-    await message.answer("✅ Admin အကူ (Sub-Admin) အသစ် အောင်မြင်စွာ ထည့်သွင်းပြီးပါပြီ။\nAdmin Panel သို့ ပြန်သွားရန် /start ကိုနှိပ်ပါ။")
-    await state.clear()
+
+    text = (
+        "➕ <b>Admin အကူ ခန့်အပ်ရန် ဖိတ်ကြားစာ (Invite Code)</b>\n\n"
+        "အောက်ပါ Code ကို Copy ကူး၍ သင် Admin အဖြစ် ခန့်အပ်လိုသော သူထံသို့ ပေးပို့လိုက်ပါ။\n\n"
+        f"<code>{random_code}</code>\n\n"
+        "<i>(ထိုသူသည် ဤ Bot အတွင်းသို့ အထက်ပါ Code အား လာရောက်ရိုက်ထည့်လိုက်သည်နှင့် ၎င်း၏ ID ကို Bot မှ အလိုအလျောက်ဖမ်းယူပြီး Admin အကူအဖြစ် တန်း၍ ခန့်အပ်ပေးသွားပါမည်။)</i>"
+    )
+    
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🔙 နောက်သို့", callback_data="manage_sub_admins")]
+    ])
+    await callback.message.edit_text(text, reply_markup=kb, parse_mode="HTML")
+
     
 @client_admin_router.callback_query(F.data == "remove_sub_admin")
 async def remove_sub_admin_prompt(callback: CallbackQuery, state: FSMContext):
