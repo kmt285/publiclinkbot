@@ -323,3 +323,34 @@ async def process_recovery_key(message: Message, state: FSMContext, bot: Bot):
     
     await message.answer(success_text, reply_markup=reply_markup, parse_mode="Markdown")
     await state.clear()
+
+# ==========================================
+# 💥 NEW: Admin Invite Code ဖြင့် Sub-Admin အဖြစ် ဝင်ရောက်ခြင်း
+# ==========================================
+@client_router.message(F.text.startswith("ADMIN-"))
+async def claim_sub_admin(message: Message, bot: Bot):
+    input_code = message.text.strip()
+    
+    business = await db.businesses.find_one({"bot_token": bot.token})
+    if not business:
+        return
+        
+    invite_code = business.get("admin_invite_code")
+    
+    # Code မှန်ကန်ပြီး အသုံးပြုခွင့်ရှိနေလျှင်
+    if invite_code and input_code == invite_code:
+        user_id = message.from_user.id
+        
+        # Sub Admin စာရင်းထဲသို့ ၎င်း၏ ID ကို ထည့်သွင်းမည် (ထပ်နေပါက နှစ်ခါမထည့်ရန် $addToSet)
+        # ထို့နောက် တစ်ခါသုံး Code ဖြစ်၍ admin_invite_code ကို ဖျက်ပစ်မည်
+        await db.businesses.update_one(
+            {"bot_token": bot.token},
+            {
+                "$addToSet": {"sub_admins": user_id},
+                "$unset": {"admin_invite_code": ""}
+            }
+        )
+        
+        await message.answer("🎉 **ဂုဏ်ယူပါသည်။ လူကြီးမင်းသည် ဤ Bot ၏ Admin အကူ (Sub-Admin) အဖြစ် အောင်မြင်စွာ ခန့်အပ်ခံရပါပြီ။**\n\nစတင်အသုံးပြုရန် /start ကိုနှိပ်ပါ။", parse_mode="Markdown")
+    else:
+        await message.answer("❌ ဖိတ်ကြားစာ Code မှားယွင်းနေပါသည် (သို့မဟုတ်) အသုံးပြုပြီးသား ဖြစ်နေပါသည်။")
