@@ -366,12 +366,13 @@ async def show_service_detail(callback: CallbackQuery):
     duration_val = service.get("duration", 0)
     duration_text = "Lifetime" if duration_val == 0 else f"{duration_val} ရက်"
     
+    # 💥 ပြင်ဆင်ထားသော HTML ကုဒ်
     text = (
-        f"📦 **Service အသေးစိတ်**\n\n"
-        f"🔹 **အမည်:** {service['name']}\n"
-        f"🔹 **ဈေးနှုန်း:** {service['price']} ကျပ်\n"
-        f"🔹 **သက်တမ်း:** {duration_text}\n\n"
-        f"📝 **မှတ်ချက် (Note):** {service.get('note', 'မရှိပါ')}\n\n"
+        f"📦 <b>Service အသေးစိတ်</b>\n\n"
+        f"🔹 <b>အမည်:</b> {service['name']}\n"
+        f"🔹 <b>ဈေးနှုန်း:</b> {service['price']} ကျပ်\n"
+        f"🔹 <b>သက်တမ်း:</b> {duration_text}\n\n"
+        f"📝 <b>မှတ်ချက် (Note):</b> {service.get('note', 'မရှိပါ')}\n\n"
         "အောက်ပါ လုပ်ဆောင်ချက်များထဲမှ ရွေးချယ်ပါ-"
     )
     
@@ -383,7 +384,8 @@ async def show_service_detail(callback: CallbackQuery):
         [InlineKeyboardButton(text="🔙 နောက်သို့", callback_data="manage_services")]
     ])
     
-    await callback.message.edit_text(text, reply_markup=kb, parse_mode="Markdown")
+    # 💥 parse_mode="HTML" ပြောင်းသည်
+    await callback.message.edit_text(text, reply_markup=kb, parse_mode="HTML")
 
 @client_admin_router.callback_query(F.data.startswith("delete_svc_"))
 async def delete_service(callback: CallbackQuery):
