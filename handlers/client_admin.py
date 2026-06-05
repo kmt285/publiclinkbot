@@ -96,50 +96,69 @@ async def receive_service_duration(message: Message, state: FSMContext):
 @client_admin_router.message(AdminSetup.waiting_for_service_note)
 async def receive_service_note(message: Message, state: FSMContext):
     await state.update_data(service_note=message.text) # Note အား သိမ်းဆည်းခြင်း
-    await message.answer("🔗 Private Group / Channel ID ကို ရိုက်ထည့်ပါ။\n(မှတ်ချက် - လုံခြုံသော ဝင်ခွင့်စနစ်သုံးရန် Group ID အတိအကျ ဥပမာ `-100123456789` ကို ထည့်သွင်းပါ။)")
+    
+    text = (
+        "🔗 **နောက်ဆုံးအဆင့် (Group/Channel ချိတ်ဆက်ခြင်း)**\n\n"
+        "၁။ ဤ Bot အား သင်၏ Group သို့မဟုတ် Channel ထဲသို့ **Admin** အဖြစ် အရင်ထည့်ပါ။\n"
+        "*(Group ဖြစ်ပါက 'Ban Users' နှင့် 'Invite' အခွင့်အရေးပေးရန်လိုပြီး၊ Channel ဖြစ်ပါက 'Add Subscribers' ပေးရန် လိုပါသည်။)*\n\n"
+        "၂။ ပြီးလျှင် ထို Group/Channel ထဲမှ **မည်သည့်စာကိုမဆို ဤ Bot ဆီသို့ Forward ပြန်ပို့ပေးပါ။**\n\n"
+        "*(မှတ်ချက် - သိရှိပါက Group/Channel ID အား တိုက်ရိုက်လည်း ရိုက်ထည့်နိုင်ပါသည်။)*"
+    )
+    await message.answer(text, parse_mode="Markdown")
     await state.set_state(AdminSetup.waiting_for_service_link)
     
 @client_admin_router.message(AdminSetup.waiting_for_service_link)
 async def receive_service_link(message: Message, state: FSMContext, bot: Bot):
-    chat_id_str = message.text.strip()
+    chat_id_str = None
+    
+    # 💥 NEW: Forward လုပ်လာသော စာဖြစ်လျှင် ID အား အလိုအလျောက် ဆွဲယူမည်
+    if message.forward_origin:
+        if hasattr(message.forward_origin, 'chat'):
+            chat_id_str = str(message.forward_origin.chat.id)
+        else:
+            return await message.answer("❌ **Error:** လူပုဂ္ဂိုလ်ဆီမှ Forward မဟုတ်ဘဲ Group သို့မဟုတ် Channel ထဲမှ စာကိုသာ Forward ပို့ပေးပါ။")
+            
+    # 💥 (သို့မဟုတ်) စာသားတိုက်ရိုက် ရိုက်ထည့်လျှင်
+    elif message.text and (message.text.startswith("-100") or message.text.startswith("@")):
+        chat_id_str = message.text.strip()
+        
+    else:
+        return await message.answer("❌ **Error:** ကျေးဇူးပြု၍ Group/Channel မှ စာကို Forward သေချာစွာ ပို့ပေးပါ။ (သို့မဟုတ် -100 ဖြင့်စသော ID အမှန်ကို ရိုက်ထည့်ပါ။)")
+
     data = await state.get_data()
     
-    # 💥 NEW: Group/Channel အတွင်း Bot အား Admin ခန့်ထားခြင်း ရှိ/မရှိ အတိအကျ စစ်ဆေးခြင်း 💥
-    if chat_id_str.startswith("-100") or chat_id_str.startswith("@"):
-        try:
-            # စာသားဖြစ်နေပါက Integer သို့ ပြောင်းမည် (Telegram API အတွက် ပိုမိုတိကျစေရန်)
-            target_chat_id = int(chat_id_str) if chat_id_str.lstrip('-').isdigit() else chat_id_str
+    # Group/Channel အတွင်း Bot အား Admin ခန့်ထားခြင်း ရှိ/မရှိ အတိအကျ စစ်ဆေးခြင်း
+    try:
+        target_chat_id = int(chat_id_str) if chat_id_str.lstrip('-').isdigit() else chat_id_str
+        
+        chat = await bot.get_chat(target_chat_id)
+        bot_user = await bot.get_me()
+        member = await bot.get_chat_member(chat_id=target_chat_id, user_id=bot_user.id)
+        
+        status_val = member.status.value if hasattr(member.status, "value") else str(member.status)
+        
+        if status_val not in ["administrator", "creator"]:
+            return await message.answer("❌ **Error: ဤ Group/Channel တွင် Bot အား Admin အဖြစ် မခန့်ထားသေးပါ။**\n\nကျေးဇူးပြု၍ Bot အား Admin အဖြစ် အရင်ခန့်အပ်ပြီးမှ စာကို ထပ်မံ Forward ပို့ပါ။")
+        
+        if status_val == "administrator":
+            can_invite = getattr(member, "can_invite_users", False)
             
-            chat = await bot.get_chat(target_chat_id)
-            bot_user = await bot.get_me()
-            member = await bot.get_chat_member(chat_id=target_chat_id, user_id=bot_user.id)
+            if chat.type in ["group", "supergroup"]:
+                can_restrict = getattr(member, "can_restrict_members", False)
+                if not can_invite or not can_restrict:
+                    return await message.answer("❌ **Error: အခွင့်အရေး မပြည့်စုံပါ။**\n\nGroup တွင် Admin ခန့်ရာ၌ **'Ban Users'** နှင့် **'Invite Users via Link'** အခွင့်အရေး (၂) ခုလုံး ဖွင့်ပေးထားရန် လိုအပ်ပါသည်။ ပြင်ဆင်ပြီးပါက ထပ်မံ Forward ပို့ပါ။")
+                    
+            elif chat.type == "channel":
+                if not can_invite:
+                    return await message.answer("❌ **Error: အခွင့်အရေး မပြည့်စုံပါ။**\n\nChannel တွင် Admin ခန့်ရာ၌ **'Add Subscribers' (Invite Users)** အခွင့်အရေး ဖွင့်ပေးထားရန် လိုအပ်ပါသည်။ ပြင်ဆင်ပြီးပါက ထပ်မံ Forward ပို့ပါ။")
+                    
+    except Exception as e:
+        err_msg = str(e).lower()
+        if "not found" in err_msg:
+            return await message.answer("❌ **Error: Group/Channel သို့ ဝင်ရောက်၍ မရပါ။ (Chat Not Found)**\n\nBot အား ထို Group/Channel အတွင်းသို့ Admin အဖြစ် မထည့်ရသေးခြင်း ဖြစ်နိုင်ပါသည်။ Admin ထည့်ပြီးမှ စာကို Forward ပြန်ပို့ပါ။")
+        else:
+            return await message.answer(f"❌ **Error:** {str(e)}\n\nအချက်အလက်များ မှားယွင်းနေပါသည်။ ပြန်လည်စစ်ဆေး၍ ထပ်မံကြိုးစားပါ။")
             
-            # ရာထူးအား စစ်ဆေးခြင်း (Aiogram 3 Enum Value)
-            status_val = member.status.value if hasattr(member.status, "value") else str(member.status)
-            
-            if status_val not in ["administrator", "creator"]:
-                return await message.answer("❌ **Error: ဤ Group/Channel တွင် Bot အား Admin အဖြစ် မခန့်ထားသေးပါ။**\n\nကျေးဇူးပြု၍ Bot အား Admin အဖြစ် အရင်ခန့်အပ်ပြီးမှ Group ID ကို ပြန်လည်ရိုက်ထည့်ပါ။")
-            
-            # Admin ဖြစ်ပါက Channel လား Group လား ခွဲခြား၍ အခွင့်အရေး စစ်ဆေးမည်
-            if status_val == "administrator":
-                can_invite = getattr(member, "can_invite_users", False)
-                
-                if chat.type in ["group", "supergroup"]:
-                    can_restrict = getattr(member, "can_restrict_members", False)
-                    if not can_invite or not can_restrict:
-                        return await message.answer("❌ **Error: အခွင့်အရေး မပြည့်စုံပါ။**\n\nGroup တွင် Admin ခန့်ရာ၌ **'Ban Users'** နှင့် **'Invite Users via Link'** အခွင့်အရေး (၂) ခုလုံး ဖွင့်ပေးထားရန် လိုအပ်ပါသည်။")
-                        
-                elif chat.type == "channel":
-                    if not can_invite:
-                        return await message.answer("❌ **Error: အခွင့်အရေး မပြည့်စုံပါ။**\n\nChannel တွင် Admin ခန့်ရာ၌ **'Add Subscribers' (Invite Users)** အခွင့်အရေး ဖွင့်ပေးထားရန် လိုအပ်ပါသည်။")
-                        
-        except Exception as e:
-            err_msg = str(e).lower()
-            if "not found" in err_msg:
-                return await message.answer("❌ **Error: Group/Channel သို့ ဝင်ရောက်၍ မရပါ။ (Chat Not Found)**\n\nBot အား ထို Group/Channel အတွင်းသို့ Admin အဖြစ် မထည့်ရသေးခြင်း (သို့မဟုတ်) ID အတိအကျ မှားယွင်းနေခြင်း ဖြစ်နိုင်ပါသည်။\nပြင်ဆင်ပြီးပါက ID အား ထပ်မံရိုက်ထည့်ပါ။")
-            else:
-                return await message.answer(f"❌ **Error:** {str(e)}\n\nအချက်အလက်များ မှားယွင်းနေပါသည်။ ပြန်လည်စစ်ဆေး၍ ID ထပ်ထည့်ပါ။")
-                
     # အားလုံး မှန်ကန်ပါက DB ထဲသို့ သိမ်းဆည်းခြင်း 
     await db.services.insert_one({
         "bot_token": bot.token,
@@ -160,7 +179,7 @@ async def receive_service_link(message: Message, state: FSMContext, bot: Bot):
         f"🔹 **ဈေးနှုန်း:** {data['service_price']} ကျပ်\n"
         f"🔹 **သက်တမ်း:** {duration_text}\n"
         f"📝 **မှတ်ချက် (Note):** {data.get('service_note', 'မရှိပါ')}\n"
-        f"🔹 **Group/Link:** {chat_id_str}"
+        f"🔹 **Group/Channel ID:** `{chat_id_str}`"
     )
     await message.answer(success_text, parse_mode="Markdown")
     await state.clear()
