@@ -24,18 +24,19 @@ async def start_cmd(message: Message, state: FSMContext):
     
     # 👑 Super Admin ဝင်လာလျှင်
     if message.from_user.id in SUPER_ADMINS:
-        text = "👑 **SaaS Master Super Admin Bot** မှ ကြိုဆိုပါတယ်။\n\n"
-        text += "သင်သည် Super Admin ဖြစ်သောကြောင့် အောက်ပါ ခလုတ်ကိုနှိပ်၍ စနစ်တစ်ခုလုံးကို စီမံနိုင်ပါသည်။"
+        text = "👑 **SaaS Master Super Admin Bot** မှ ကြိုဆိုပါတယ်။\n\nသင်သည် Super Admin ဖြစ်သောကြောင့် အောက်ပါ ခလုတ်ကိုနှိပ်၍ စနစ်တစ်ခုလုံးကို စီမံနိုင်ပါသည်။"
         kb = InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="📊 စနစ်တစ်ခုလုံး၏ စာရင်းဇယားကြည့်ရန်", callback_data="show_stats")]
         ])
         return await message.answer(text, reply_markup=kb, parse_mode="Markdown")
     
-    # 🏢 သာမန် လုပ်ငန်းရှင် ဝင်လာလျှင်
+    # 🏢 သာမန် လုပ်ငန်းရှင် ဝင်လာလျှင် Database ကို အရင်ဆွဲထုတ်မည်
     biz = await db.businesses.find_one({"owner_id": message.from_user.id})
+    config = await db.system_config.find_one({"_id": "master_config"})
     
+    # Bot မချိတ်ရသေးသူ ဖြစ်ပါက
     if not biz:
-        text = "🌟 **SaaS Telegram Bot Platform** မှ ကြိုဆိုပါတယ်။\n\nလူကြီးမင်း၏ ကိုယ်ပိုင် VIP Subscription Bot ကို (၁) လ အခမဲ့ စတင်အသုံးပြုနိုင်ရန် အောက်ပါခလုတ်ကို နှိပ်ပါ။"
+        text = "🌟 **SaaS Telegram Bot Platform** မှ ကြိုဆိုပါတယ်။\n\nလူကြီးမင်း၏ ကိုယ်ပိုင် VIP Subscription Bot ကို စတင်အသုံးပြုနိုင်ရန် အောက်ပါခလုတ်ကို နှိပ်ပါ။"
         kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="➕ Bot အသစ် ဖန်တီးရန်", callback_data="create_new_bot")]])
         return await message.answer(text, reply_markup=kb, parse_mode="Markdown")
         
@@ -47,22 +48,38 @@ async def start_cmd(message: Message, state: FSMContext):
     else:
         exp_text = exp.strftime("%d-%m-%Y")
         status_text = "🔴 Suspended (ရပ်ဆိုင်းထားသည်)" if biz.get("status") == "suspended" else "🟢 Active"
-        
-    text = (
-        f"🏢 **လူကြီးမင်း၏ Bot အချက်အလက်များ**\n\n"
-        f"🤖 **Bot Token:** `{biz['bot_token'][:15]}...`\n"
-        f"⏳ **သက်တမ်းကုန်ဆုံးမည့်ရက်:** {exp_text}\n"
-        f"📊 **အခြေအနေ:** {status_text}\n\n"
-        "💳 **သက်တမ်းတိုးရန် အောက်ပါ Plan များမှ တစ်ခုကို ရွေးချယ်ပါ။**"
-    )
-    
-    kb = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="🔹 1 Month Plan - 30,000 MMK", callback_data="buyplan_30")],
-        [InlineKeyboardButton(text="🔹 3 Months Plan - 80,000 MMK", callback_data="buyplan_90")],
-        [InlineKeyboardButton(text="🔹 6 Months Plan - 150,000 MMK", callback_data="buyplan_180")],
-        [InlineKeyboardButton(text="💎 Lifetime Plan - 500,000 MMK", callback_data="buyplan_0")]
-    ])
-    await message.answer(text, reply_markup=kb, parse_mode="Markdown")
+
+    # 💥 NEW: Subscription Mode ပွင့်/မပွင့် စစ်ဆေးခြင်း
+    is_sub_mode = config.get("subscription_mode", False) if config else False
+
+    if not is_sub_mode:
+        # 🟢 Free Mode တွင် ပြသမည့် UI (Payment နှင့် ခလုတ်များ မပြပါ)
+        text = (
+            f"🏢 **လူကြီးမင်း၏ Bot အချက်အလက်များ**\n\n"
+            f"🤖 **Bot Token:** `{biz['bot_token'][:10]}...`\n"
+            f"⏳ **သက်တမ်းကုန်ဆုံးမည့်ရက်:** {exp_text}\n"
+            f"📊 **အခြေအနေ:** {status_text}\n\n"
+            "🎁 *လက်ရှိတွင် စနစ်ကို အခမဲ့ (Lifetime) အသုံးပြုခွင့် ရရှိထားပါသည်။*"
+        )
+        await message.answer(text, parse_mode="Markdown")
+    else:
+        # 🔴 Subscription Mode တွင် ပြသမည့် UI (Payment ပြမည်)
+        pay_info = config.get("payment_info", "ငွေပေးချေရန် အကောင့် မသတ်မှတ်ရသေးပါ။ Admin ထံ ဆက်သွယ်ပါ။") if config else "Admin ထံ ဆက်သွယ်ပါ။"
+        text = (
+            f"🏢 **လူကြီးမင်း၏ Bot အချက်အလက်များ**\n\n"
+            f"🤖 **Bot Token:** `{biz['bot_token'][:10]}...`\n"
+            f"⏳ **သက်တမ်းကုန်ဆုံးမည့်ရက်:** {exp_text}\n"
+            f"📊 **အခြေအနေ:** {status_text}\n\n"
+            f"🏦 **ငွေပေးချေရန် အကောင့်:**\n`{pay_info}`\n\n"
+            "💳 **သက်တမ်းတိုးရန် အောက်ပါ Plan များမှ တစ်ခုကို ရွေးချယ်ပါ။**"
+        )
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🔹 1 Month Plan - 30,000 MMK", callback_data="buyplan_30")],
+            [InlineKeyboardButton(text="🔹 3 Months Plan - 80,000 MMK", callback_data="buyplan_90")],
+            [InlineKeyboardButton(text="🔹 6 Months Plan - 150,000 MMK", callback_data="buyplan_180")],
+            [InlineKeyboardButton(text="💎 Lifetime Plan - 500,000 MMK", callback_data="buyplan_0")]
+        ])
+        await message.answer(text, reply_markup=kb, parse_mode="Markdown")
 # ==========================================
 # 🏢 လုပ်ငန်းရှင်များ Bot Token ထည့်သွင်းခြင်း စနစ်
 # ==========================================
@@ -79,7 +96,6 @@ async def ask_bot_token(callback: CallbackQuery, state: FSMContext):
 async def receive_bot_token(message: Message, state: FSMContext):
     token = message.text.strip()
     
-    # Token အကြမ်းဖျင်း မှန်/မမှန် စစ်ဆေးခြင်း
     if ":" not in token:
         return await message.answer("❌ Token ပုံစံ မှားယွင်းနေပါသည်။ သေချာစွာ ပြန်လည်စစ်ဆေးပြီး ထပ်မံရိုက်ထည့်ပါ။")
         
@@ -89,18 +105,21 @@ async def receive_bot_token(message: Message, state: FSMContext):
 
     await message.answer("⏳ Bot Token အား စစ်ဆေးနေပါသည်... ခေတ္တစောင့်ဆိုင်းပါ။")
 
-    # 💥 NEW: Token အစစ်အမှန် ဟုတ်/မဟုတ် Telegram သို့ လှမ်း၍ စစ်ဆေးခြင်း 💥
     try:
         temp_bot = Bot(token=token)
         me = await temp_bot.get_me()
         bot_username = me.username
-        await temp_bot.session.close() # စစ်ဆေးပြီးပါက ပြန်ပိတ်မည်
+        await temp_bot.session.close() 
     except Exception as e:
-        return await message.answer("❌ **Bot Token အမှားဖြစ်နေပါသည်။** (သို့မဟုတ်) ပိတ်ပင်ခံထားရသော Bot ဖြစ်နေပါသည်။\n\nကျေးဇူးပြု၍ @BotFather မှ Token အမှန်ကိုသာ Copy ကူး၍ ထပ်မံရိုက်ထည့်ပါ။")
+        return await message.answer("❌ **Bot Token အမှားဖြစ်နေပါသည်။**")
 
-    # မှန်ကန်ပါက ဆက်လက်အလုပ်လုပ်မည်
+    # 💥 NEW: လက်ရှိ System သည် Subscription Mode ပြောင်းပြီးသား ဟုတ်/မဟုတ် စစ်ဆေးခြင်း
+    config = await db.system_config.find_one({"_id": "master_config"})
+    is_sub_mode = config.get("subscription_mode", False) if config else False
+
     created_date = datetime.utcnow()
-    expires_date = created_date + timedelta(days=30)
+    # Subscription Mode ဖြစ်နေလျှင် ၃၀ ရက် ပေးမည်။ မဟုတ်လျှင် Lifetime (None) ပေးမည်။
+    expires_date = created_date + timedelta(days=30) if is_sub_mode else None
 
     await db.businesses.insert_one({
         "bot_token": token, 
@@ -114,8 +133,9 @@ async def receive_bot_token(message: Message, state: FSMContext):
     from core.bot_manager import start_client_bot 
     asyncio.create_task(start_client_bot(token))
     
+    dur_text = "(၁) လ" if is_sub_mode else "အကန့်အသတ်မရှိ (Lifetime)"
     success_text = f"✅ **Client Bot (@{bot_username}) အသစ် အောင်မြင်စွာ ထည့်သွင်းပြီးပါပြီ။**\n\n"
-    success_text += "🎁 ဤ Bot အား (၁) လ အခမဲ့ အသုံးပြုခွင့် ပေးထားပါသည်။\n"
+    success_text += f"🎁 ဤ Bot အား {dur_text} အခမဲ့ အသုံးပြုခွင့် ပေးထားပါသည်။\n"
     success_text += f"👉 ယခု သင့် Bot ( https://t.me/{bot_username} ) ဆီသွား၍ `/start` ကိုနှိပ်ပြီး ဝန်ဆောင်မှုများကို စတင် ဖန်တီးနိုင်ပါပြီ။"
     await message.answer(success_text, parse_mode="Markdown")
     await state.clear()
@@ -141,10 +161,12 @@ async def view_system_stats_cb(callback: CallbackQuery):
     
     kb = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="🏢 လုပ်ငန်းရှင်များစာရင်း အသေးစိတ်ကြည့်ရန်", callback_data="view_businesses")],
-        [InlineKeyboardButton(text="🧹 Database အမှိုက်များ ရှင်းလင်းမည်", callback_data="clean_database")] 
+        # 💥 NEW: Subscription သို့ ပြောင်းလဲမည့် ခလုတ် အသစ်
+        [InlineKeyboardButton(text="🔄 Subscription စနစ်သို့ အားလုံးပြောင်းလဲမည်", callback_data="trigger_sub_transition")],
+        [InlineKeyboardButton(text="🧹 Database အမှိုက်များ ရှင်းလင်းမည်", callback_data="clean_database")]
     ])
     await callback.message.edit_text(stats_text, reply_markup=kb, parse_mode="Markdown")
-
+    
 # --- လုပ်ငန်းရှင်များ စာရင်းပြသခြင်း ---
 @master_router.callback_query(F.data == "view_businesses")
 async def list_businesses(callback: CallbackQuery):
@@ -460,3 +482,59 @@ async def reject_business_sub(callback: CallbackQuery, bot: Bot):
     except: pass
     
     await callback.message.edit_caption(caption=callback.message.caption + "\n\n🔴 **REJECTED**", reply_markup=None)
+
+# ==========================================
+# 🔄 Subscription Mode သို့ ကူးပြောင်းခြင်း
+# ==========================================
+@master_router.callback_query(F.data == "trigger_sub_transition")
+async def trigger_subscription_transition(callback: CallbackQuery, bot: Bot):
+    if callback.from_user.id not in SUPER_ADMINS: return
+    
+    # System ကို Subscription Mode သို့ ပြောင်းကြောင်း DB တွင် မှတ်သားမည်
+    await db.system_config.update_one(
+        {"_id": "master_config"}, 
+        {"$set": {"subscription_mode": True}}, 
+        upsert=True
+    )
+    
+    # expires_at မရှိသော (Free) အသုံးပြုနေသူများကို ရှာမည်
+    free_biz = await db.businesses.find({"expires_at": None, "status": "active"}).to_list(length=1000)
+    
+    if not free_biz:
+        return await callback.answer("⚠️ အခမဲ့ (Lifetime) အသုံးပြုနေသော လုပ်ငန်းရှင် မရှိပါ။ (သို့မဟုတ်) ပြောင်းလဲပြီးသား ဖြစ်နေပါသည်။", show_alert=True)
+        
+    await callback.message.edit_text("⏳ စနစ်ကို Subscription သို့ ပြောင်းလဲနေပါသည်...\nလုပ်ငန်းရှင်များထံ အသိပေးစာများ ပို့နေသဖြင့် ခေတ္တစောင့်ဆိုင်းပါ။")
+    
+    now = datetime.utcnow()
+    new_exp = now + timedelta(days=30)
+    count = 0
+    
+    for biz in free_biz:
+        owner_id = biz.get("owner_id")
+        
+        # Database တွင် (၁) လ သက်တမ်း အသစ် သတ်မှတ်ခြင်း
+        await db.businesses.update_one(
+            {"_id": biz["_id"]},
+            {"$set": {"expires_at": new_exp, "notified_7": False, "notified_3": False, "notified_1": False}}
+        )
+        count += 1
+        
+        # လုပ်ငန်းရှင်တိုင်းထံသို့ Broadcast ပို့ခြင်း
+        msg_text = (
+            "📢 **အရေးကြီး ကြေညာချက် (Subscription စနစ်သို့ ပြောင်းလဲခြင်း)**\n\n"
+            "ကျွန်ုပ်တို့၏ စနစ်ကို ယုံကြည်စွာ အသုံးပြုပေးတဲ့အတွက် ကျေးဇူးတင်ပါတယ်။ စနစ်တကျ ရေရှည်ဝန်ဆောင်မှုပေးနိုင်ရန် ယနေ့မှစ၍ **Subscription စနစ်** သို့ ပြောင်းလဲလိုက်ပြီ ဖြစ်ပါသည်။\n\n"
+            "🎁 လက်ရှိအသုံးပြုသူများအား ကျေးဇူးတုံ့ပြန်သောအားဖြင့် **ယနေ့မှစ၍ နောက်ထပ် (၁) လတိတိ (ရက် ၃၀)** ဆက်လက်၍ အခမဲ့ အသုံးပြုခွင့် ပေးထားပါသည်။\n\n"
+            "သက်တမ်းတိုးရန် Master Bot ၏ /start တွင် Plan များကို ရွေးချယ်၍ ငွေပေးချေနိုင်ပါသည်။"
+        )
+        try:
+            await bot.send_message(owner_id, msg_text, parse_mode="Markdown")
+            await asyncio.sleep(0.05) # Flood Wait မဖြစ်စေရန် ထိန်းထားခြင်း
+        except: pass
+        
+    success_text = (
+        f"✅ **Subscription စနစ်သို့ အောင်မြင်စွာ ကူးပြောင်းပြီးပါပြီ!**\n\n"
+        f"လုပ်ငန်းရှင်ပေါင်း **({count})** ဦးကို ရက် ၃၀ သက်တမ်း ပြောင်းလဲသတ်မှတ်ပြီး၊ အသိပေးစာ (Broadcast) များ အလိုအလျောက် ပို့ဆောင်ပြီးပါပြီ။\n\n"
+        f"*(မှတ်ချက် - ယခုမှစ၍ Bot အသစ်လာချိတ်သော လုပ်ငန်းရှင်များကိုလည်း အလိုအလျောက် (၁) လ သက်တမ်းသာ သတ်မှတ်ပေးတော့မည် ဖြစ်ပါသည်။)*"
+    )
+    kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="🔙 နောက်သို့", callback_data="show_stats")]])
+    await callback.message.edit_text(success_text, reply_markup=kb, parse_mode="Markdown")
