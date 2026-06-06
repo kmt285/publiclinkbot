@@ -1,5 +1,5 @@
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta
 from aiogram import Bot
 from bson.objectid import ObjectId
 from core.database import db
@@ -55,3 +55,53 @@ async def check_expired_subscriptions():
         )
     
     logging.info(f"✅ Auto-kick process completed. {len(expired_subs)} users expired.")
+
+async def check_business_expirations(master_bot):
+    now = datetime.utcnow()
+    businesses = await db.businesses.find({"expires_at": {"$ne": None}}).to_list(length=1000)
+    
+    for biz in businesses:
+        exp = biz.get("expires_at")
+        if not exp: continue
+        
+        owner_id = biz.get("owner_id")
+        time_left = exp - now
+        days_left = time_left.days
+        
+        # ၁။ ၇-ရက် အလို သတိပေးခြင်း
+        if days_left == 7 and not biz.get("notified_7"):
+            try:
+                await master_bot.send_message(owner_id, "⚠️ **သတိပေးချက်:** လူကြီးမင်း၏ Bot သက်တမ်း (၇) ရက်အတွင်း ကုန်ဆုံးပါတော့မည်။ ဆက်လက်အသုံးပြုရန် Master Bot တွင် ငွေပေးချေမှုပြုလုပ်ပါ။", parse_mode="Markdown")
+                await db.businesses.update_one({"_id": biz["_id"]}, {"$set": {"notified_7": True}})
+            except: pass
+            
+        # ၂။ ၃-ရက် အလို သတိပေးခြင်း
+        elif days_left == 3 and not biz.get("notified_3"):
+            try:
+                await master_bot.send_message(owner_id, "⚠️ **အရေးကြီးသတိပေးချက်:** လူကြီးမင်း၏ Bot သက်တမ်း (၃) ရက်အတွင်း ကုန်ဆုံးပါတော့မည်။ သက်တမ်းမတိုးပါက စနစ်မှ ယာယီရပ်ဆိုင်းသွားမည်ဖြစ်သည်။", parse_mode="Markdown")
+                await db.businesses.update_one({"_id": biz["_id"]}, {"$set": {"notified_3": True}})
+            except: pass
+            
+        # ၃။ ၁-ရက် အလို သတိပေးခြင်း
+        elif days_left == 1 and not biz.get("notified_1"):
+            try:
+                await master_bot.send_message(owner_id, "🚨 **နောက်ဆုံးသတိပေးချက်:** မနက်ဖြန်တွင် လူကြီးမင်း၏ Bot သက်တမ်းကုန်ဆုံးမည်ဖြစ်၍ ဝန်ဆောင်မှုများ အလိုအလျောက် ရပ်တန့်သွားပါမည်။", parse_mode="Markdown")
+                await db.businesses.update_one({"_id": biz["_id"]}, {"$set": {"notified_1": True}})
+            except: pass
+            
+        # ၄။ သက်တမ်းကုန်သွားပါက ချက်ချင်း SUSPEND လုပ်ခြင်း
+        elif time_left.total_seconds() <= 0 and biz.get("status") == "active":
+            await db.businesses.update_one({"_id": biz["_id"]}, {"$set": {"status": "suspended"}})
+            try:
+                await master_bot.send_message(owner_id, "🚫 **လူကြီးမင်း၏ Bot မှာ သက်တမ်းကုန်ဆုံးသွားသောကြောင့် ယာယီရပ်ဆိုင်း (Suspend) လိုက်ပါသည်။**\n\n(၇) ရက်အတွင်း သက်တမ်းမတိုးပါက Database အတွင်းမှ Data များအားလုံး အပြီးတိုင် ပျက်ပြယ်သွားမည် ဖြစ်ပါသည်။", parse_mode="Markdown")
+            except: pass
+            
+        # ၅။ Suspend ဖြစ်ပြီး (၇) ရက် ကျော်လွန်သွားပါက DATABASE မှ အပြီးတိုင် ရှင်းထုတ်ခြင်း 💥
+        elif time_left.total_seconds() <= - (7 * 24 * 3600):
+            token = biz["bot_token"]
+            await db.businesses.delete_one({"_id": biz["_id"]})
+            await db.services.delete_many({"bot_token": token})
+            await db.subscriptions.delete_many({"bot_token": token})
+            try:
+                await master_bot.send_message(owner_id, "🗑 **လူကြီးမင်း၏ Bot အား သက်တမ်းလွန်သွားသဖြင့် စနစ်မှ အပြီးတိုင် ရှင်းလင်းဖယ်ရှားလိုက်ပါပြီ။**\n\nကျေးဇူးပြု၍ စနစ်ကို ပြန်လည်အသုံးပြုလိုပါက Bot အသစ် ပြန်လည်ချိတ်ဆက်ပါ။", parse_mode="Markdown")
+            except: pass
