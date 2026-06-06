@@ -10,5 +10,6 @@ class Database:
         self.services = self.db.services
         self.subscriptions = self.db.subscriptions
         self.users = self.db.users
+        self.system_config = self.db.system_config
 
 db = Database()
