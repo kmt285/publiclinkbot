@@ -145,7 +145,7 @@ async def receive_bot_token(message: Message, state: FSMContext):
 # ==========================================
 @master_router.callback_query(F.data == "show_stats")
 async def view_system_stats_cb(callback: CallbackQuery):
-    if callback.from_user.id not in SUPER_ADMINS: return # 💥 လုံခြုံရေး ပိတ်ပင်ခြင်း
+    if callback.fromuser.id not in SUPER_ADMINS: return
     
     total_bots = await db.businesses.count_documents({})
     total_services = await db.services.count_documents({})
@@ -159,10 +159,17 @@ async def view_system_stats_cb(callback: CallbackQuery):
         "စနစ်တစ်ခုလုံး တည်ငြိမ်စွာ လည်ပတ်နေပါသည်။ 🚀"
     )
     
+    # 💥 NEW: လက်ရှိ Subscription ဖွင့်ထားသလား ပိတ်ထားသလား စစ်ဆေးမည်
+    config = await db.system_config.find_one({"_id": "master_config"})
+    is_sub_mode = config.get("subscription_mode", False) if config else False
+    
+    # အခြေအနေပေါ်မူတည်၍ ခလုတ်စာသားကို ပြောင်းလဲပြသမည်
+    sub_btn_text = "🔴 Subscription စနစ် ပိတ်မည် (Free Mode)" if is_sub_mode else "🟢 Subscription စနစ်သို့ အားလုံးပြောင်းလဲမည်"
+    sub_callback = "disable_sub_mode" if is_sub_mode else "trigger_sub_transition"
+    
     kb = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="🏢 လုပ်ငန်းရှင်များစာရင်း အသေးစိတ်ကြည့်ရန်", callback_data="view_businesses")],
-        # 💥 NEW: Subscription သို့ ပြောင်းလဲမည့် ခလုတ် အသစ်
-        [InlineKeyboardButton(text="🔄 Subscription စနစ်သို့ အားလုံးပြောင်းလဲမည်", callback_data="trigger_sub_transition")],
+        [InlineKeyboardButton(text=sub_btn_text, callback_data=sub_callback)],
         [InlineKeyboardButton(text="🧹 Database အမှိုက်များ ရှင်းလင်းမည်", callback_data="clean_database")]
     ])
     await callback.message.edit_text(stats_text, reply_markup=kb, parse_mode="Markdown")
@@ -535,6 +542,54 @@ async def trigger_subscription_transition(callback: CallbackQuery, bot: Bot):
         f"✅ **Subscription စနစ်သို့ အောင်မြင်စွာ ကူးပြောင်းပြီးပါပြီ!**\n\n"
         f"လုပ်ငန်းရှင်ပေါင်း **({count})** ဦးကို ရက် ၃၀ သက်တမ်း ပြောင်းလဲသတ်မှတ်ပြီး၊ အသိပေးစာ (Broadcast) များ အလိုအလျောက် ပို့ဆောင်ပြီးပါပြီ။\n\n"
         f"*(မှတ်ချက် - ယခုမှစ၍ Bot အသစ်လာချိတ်သော လုပ်ငန်းရှင်များကိုလည်း အလိုအလျောက် (၁) လ သက်တမ်းသာ သတ်မှတ်ပေးတော့မည် ဖြစ်ပါသည်။)*"
+    )
+    kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="🔙 နောက်သို့", callback_data="show_stats")]])
+    await callback.message.edit_text(success_text, reply_markup=kb, parse_mode="Markdown")
+
+# ==========================================
+# 🛑 Subscription Mode အား ပိတ်၍ Free Mode သို့ ပြန်ပြောင်းခြင်း
+# ==========================================
+@master_router.callback_query(F.data == "disable_sub_mode")
+async def disable_subscription_transition(callback: CallbackQuery, bot: Bot):
+    if callback.from_user.id not in SUPER_ADMINS: return
+    
+    # System ကို Free Mode သို့ ပြန်ပြောင်းကြောင်း DB တွင် မှတ်သားမည်
+    await db.system_config.update_one(
+        {"_id": "master_config"}, 
+        {"$set": {"subscription_mode": False}}, 
+        upsert=True
+    )
+    
+    # လက်ရှိ active ဖြစ်နေသော (ငွေပေးသွင်းရမည့်) လုပ်ငန်းရှင်များကို ရှာမည်
+    active_biz = await db.businesses.find({"status": "active", "expires_at": {"$ne": None}}).to_list(length=1000)
+    
+    await callback.message.edit_text("⏳ စနစ်ကို Free Mode သို့ ပြန်လည်ပြောင်းလဲနေပါသည်...\nလုပ်ငန်းရှင်များထံ အသိပေးစာများ ပို့နေသဖြင့် ခေတ္တစောင့်ဆိုင်းပါ။")
+    
+    count = 0
+    for biz in active_biz:
+        owner_id = biz.get("owner_id")
+        
+        # Database တွင် Lifetime (None) သို့ ပြန်လည်ပြောင်းလဲသတ်မှတ်ခြင်း
+        await db.businesses.update_one(
+            {"_id": biz["_id"]},
+            {"$set": {"expires_at": None}}
+        )
+        count += 1
+        
+        # လုပ်ငန်းရှင်တိုင်းထံသို့ သတင်းကောင်း Broadcast ပို့ခြင်း
+        msg_text = (
+            "🎉 **ဝမ်းမြောက်ဖွယ်ရာ အသိပေးချက် (Free Mode သို့ ပြောင်းလဲခြင်း)**\n\n"
+            "ကျွန်ုပ်တို့၏ စနစ်ကို ယခုမှစ၍ **အခမဲ့ (Lifetime)** အဖြစ် ပြန်လည်အသုံးပြုခွင့် ပေးလိုက်ပြီဖြစ်ပါသည်။\n\n"
+            "ယခုမှစ၍ လစဉ်ကြေး/နှစ်စဉ်ကြေး ပေးသွင်းရန် မလိုတော့ဘဲ သင်၏ Bot အား အကန့်အသတ်မရှိ ဆက်လက်အသုံးပြုနိုင်ပြီ ဖြစ်ပါသည်။"
+        )
+        try:
+            await bot.send_message(owner_id, msg_text, parse_mode="Markdown")
+            await asyncio.sleep(0.05) # Flood Wait မဖြစ်စေရန် ထိန်းထားခြင်း
+        except: pass
+        
+    success_text = (
+        f"✅ **Free Mode သို့ အောင်မြင်စွာ ပြန်လည်ကူးပြောင်းပြီးပါပြီ!**\n\n"
+        f"လုပ်ငန်းရှင်ပေါင်း **({count})** ဦးကို Lifetime သက်တမ်း ပြန်လည်သတ်မှတ်ပေးပြီး၊ သတင်းကောင်း အသိပေးစာ (Broadcast) များ အလိုအလျောက် ပို့ဆောင်ပြီးပါပြီ။"
     )
     kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="🔙 နောက်သို့", callback_data="show_stats")]])
     await callback.message.edit_text(success_text, reply_markup=kb, parse_mode="Markdown")
