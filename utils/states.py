@@ -31,4 +31,7 @@ class MasterBooking(StatesGroup):
     waiting_for_slip = State()
     plan_days = State()
 
+class MasterBroadcast(StatesGroup):
+    waiting_for_msg = State()
+
     
